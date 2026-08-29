@@ -1,4 +1,13 @@
-# Milpa Desktop
+<p align="center">
+  <a href="https://github.com/getmilpa">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/getmilpa/core/main/art/lockup/milpa-lockup-v-color-dark.svg">
+      <img src="https://raw.githubusercontent.com/getmilpa/core/main/art/lockup/milpa-lockup-v-color-light.svg" alt="Milpa" width="300">
+    </picture>
+  </a>
+</p>
+
+# milpa/desktop
 
 A native desktop shell for the [Milpa](https://github.com/getmilpa) agent. The window is an Electron app
 rendering a local, `@milpa/design`-styled UI; the backend is a real Milpa app running in a Docker container.
