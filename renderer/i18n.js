@@ -6,7 +6,7 @@
   const messages = {
     en: {
       'nav.sessions': 'Sessions', 'nav.decisions': 'Decisions', 'nav.capabilities': 'Capabilities', 'nav.settings': 'Settings', 'nav.components': 'Components',
-      'components.kicker': 'live components', 'components.intro': 'A Desktop screen authored the Milpa way — a live web component (metric cards, data table, signed <milpa-state>) rendered by the framework, hosted here.', 'components.loading': 'Rendering the component…', 'components.error': 'The component surface is not wired to this container yet.',
+      'components.kicker': 'live components', 'components.intro': 'A Desktop screen authored the Milpa way — a live web component (metric cards, data table, signed <milpa-state>) rendered by the framework, hosted here.', 'components.loading': 'Rendering the component…', 'components.error': 'The component surface is not wired to this container yet.', 'components.which': 'Screen', 'components.preview': 'Preview',
       'nav.sessionsSection': 'sessions · goal and state',
       'tab.conversation': 'Conversation', 'tab.work': 'Work', 'tab.activity': 'Activity', 'tab.context': 'Context',
       'live.connecting': 'Connecting to the runtime…', 'live.booting': 'Bringing the backend up…', 'live.live': 'Live',
@@ -90,6 +90,7 @@
       'decisions.noneYet': 'The session has not recorded decisions yet.',
       'decisions.noPerms': 'No permission granted in this session.',
       'decisions.pending': 'pending decision',
+      'decisions.expired': 'expired',
       'decisions.sessionDecisions': 'session decisions',
       'decisions.permsAttribution': 'permissions · attribution',
       'context.inWindow': 'in the window now',
@@ -130,7 +131,7 @@
     },
     es: {
       'nav.sessions': 'Sesiones', 'nav.decisions': 'Decisiones', 'nav.capabilities': 'Capacidades', 'nav.settings': 'Ajustes', 'nav.components': 'Componentes',
-      'components.kicker': 'componentes vivos', 'components.intro': 'Una pantalla del Desktop al estilo Milpa — un componente web vivo (metric cards, data table, <milpa-state> firmado) renderizado por el framework, hospedado aquí.', 'components.loading': 'Renderizando el componente…', 'components.error': 'La superficie de componentes aún no está cableada a este contenedor.',
+      'components.kicker': 'componentes vivos', 'components.intro': 'Una pantalla del Desktop al estilo Milpa — un componente web vivo (metric cards, data table, <milpa-state> firmado) renderizado por el framework, hospedado aquí.', 'components.loading': 'Renderizando el componente…', 'components.error': 'La superficie de componentes aún no está cableada a este contenedor.', 'components.which': 'Pantalla', 'components.preview': 'Vista previa',
       'nav.sessionsSection': 'sesiones · objetivo y estado',
       'tab.conversation': 'Conversación', 'tab.work': 'Trabajo', 'tab.activity': 'Actividad', 'tab.context': 'Contexto',
       'live.connecting': 'Conectando al runtime…', 'live.booting': 'Levantando backend…', 'live.live': 'En vivo',
@@ -214,6 +215,7 @@
       'decisions.noneYet': 'La sesión aún no registra decisiones.',
       'decisions.noPerms': 'Ningún permiso concedido en esta sesión.',
       'decisions.pending': 'decisión pendiente',
+      'decisions.expired': 'expiró',
       'decisions.sessionDecisions': 'decisiones de la sesión',
       'decisions.permsAttribution': 'permisos · atribución',
       'context.inWindow': 'en la ventana ahora',

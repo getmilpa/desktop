@@ -336,7 +336,15 @@ function renderDecisiones (show) {
   }
 
   const decList = decisions.length
-    ? decisions.map(d => { const t = (d && (d.text || d.title || d.decision || d.summary)) || d; return `<div class="mui-card mui-card--compact"><div class="mui-card__body"><p style="margin:0;font-size:var(--text-sm)">${clean(md(String(t).slice(0, 200)))}</p></div></div>` }).join('')
+    ? decisions.map(d => {
+      const question = (d && (d.question || d.text || d.title || d.decision || d.summary)) || ''
+      const expired = d && d.expired
+      const answer = d && d.answer
+      const label = expired ? tr('decisions.expired') : (answer != null && answer !== '' ? String(answer) : '')
+      const badge = label ? `<span class="mui-badge ${expired ? 'mui-badge--danger' : 'mui-badge--success'}" style="margin-left:var(--space-2)">${clean(String(label).slice(0, 40))}</span>` : ''
+      const body = question ? clean(md(String(question).slice(0, 200))) : tr('decisions.noneYet')
+      return `<div class="mui-card mui-card--compact"><div class="mui-card__body"><p style="margin:0;font-size:var(--text-sm)">${body}${badge}</p></div></div>`
+    }).join('')
     : `<p class="dv-note">${tr('decisions.noneYet')}</p>`
 
   const permList = perms.length
