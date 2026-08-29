@@ -1,0 +1,51 @@
+{
+    "name": "milpa-desktop-shell",
+    "version": "0.2.0",
+    "description": "A minimal Electron shell that orchestrates a Milpa app in Docker and renders the agent board + a live preview of the UI the agent declares.",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "dist": "electron-builder --linux AppImage",
+        "dist:mac": "electron-builder --mac dmg zip",
+        "dist:dir": "electron-builder --dir",
+        "verify": "sh test/verify.sh"
+    },
+    "license": "Apache-2.0",
+    "author": "Rodrigo Vicente - TeamX Agency",
+    "devDependencies": {
+        "electron": "^38.0.0",
+        "electron-builder": "^25.0.0"
+    },
+    "build": {
+        "appId": "agency.teamx.milpa.desktop",
+        "productName": "Milpa Desktop",
+        "artifactName": "Milpa-Desktop-${version}-${arch}.${ext}",
+        "files": [
+            "main.js",
+            "preload.js",
+            "renderer/**/*",
+            "package.json"
+        ],
+        "linux": {
+            "target": [
+                "AppImage"
+            ],
+            "category": "Development"
+        },
+        "mac": {
+            "target": [
+                "dmg",
+                "zip"
+            ],
+            "category": "public.app-category.developer-tools"
+        },
+        "extraMetadata": {
+            "description": "Milpa agent board — a desktop host that orchestrates the milpa dev container"
+        }
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/getmilpa/desktop.git"
+    },
+    "homepage": "https://github.com/getmilpa/desktop"
+}

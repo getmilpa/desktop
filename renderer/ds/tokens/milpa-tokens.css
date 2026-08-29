@@ -1,0 +1,201 @@
+/* Milpa — design tokens. Dark-first.
+   GENERADO desde tokens/milpa-tokens.json — NO editar a mano.
+   Regenerar: npm run build · verificar: npm test · CI falla si driftea (--check).
+   Dark = default (:root, y [data-theme="dark"]). Light = [data-theme="light"] en <html>.
+   IMPORTANTE: <html> SIEMPRE lleva data-theme ("dark" | "light"); nunca ausente (para que
+   las utilidades dark: de Tailwind matcheen el estado por defecto).
+   Cascada: todo el CSS publicado vive en @layer milpa.* — el CSS sin layer del
+   consumidor/plugin SIEMPRE gana (THEMING.md).
+   Todos los pares texto/UI verificados WCAG AA (npm test). */
+
+@layer milpa.tokens, milpa.motion, milpa.primitives, milpa.components, milpa.artifacts, milpa.layouts;
+
+@layer milpa.tokens {
+
+/* ===== color: primitives ===== */
+:root {
+  --tierra-50:#FAF5EF; --tierra-100:#ECE6D8; --tierra-200:#E3D7CC; --tierra-300:#CBBFB4; --tierra-400:#B4A99E; --tierra-500:#9D9388; --tierra-600:#847A70; --tierra-700:#6B6157; --tierra-800:#51483F; --tierra-900:#372F27; --tierra-950:#17120D;
+  --oro-50:#FFF4E3; --oro-100:#FFE8C2; --oro-200:#FFD286; --oro-300:#E8B14C; --oro-400:#DC9E12; --oro-500:#C18900; --oro-600:#A27200; --oro-700:#825B00; --oro-800:#624400; --oro-900:#422C00; --oro-950:#211400;
+  --olivo-50:#F4F7F0; --olivo-100:#E8EEDD; --olivo-200:#D3DFBE; --olivo-300:#B7CA94; --olivo-400:#9CB668; --olivo-500:#85A143; --olivo-600:#6D882D; --olivo-700:#566D19; --olivo-800:#485C17; --olivo-900:#293701; --olivo-950:#121B00;
+  --cielo-50:#F0F6FF; --cielo-100:#DFEDFF; --cielo-200:#C0DCFF; --cielo-300:#97C5FF; --cielo-400:#6CADFF; --cielo-500:#4796F5; --cielo-600:#317CD5; --cielo-700:#1E63B2; --cielo-800:#1A5395; --cielo-900:#033061; --cielo-950:#001735;
+  --success-50:#E1FFE6; --success-100:#CAFAD2; --success-200:#A7EDB5; --success-300:#81D995; --success-400:#5EC478; --success-500:#41AE61; --success-600:#27934B; --success-700:#0F7737; --success-800:#005A26; --success-900:#003C17; --success-950:#001E08;
+  --warning-50:#FFF3ED; --warning-100:#FFE5D8; --warning-200:#FFCDB2; --warning-300:#FFAB7B; --warning-400:#F78A47; --warning-500:#E07227; --warning-600:#C15A04; --warning-700:#9C4700; --warning-800:#763400; --warning-900:#502100; --warning-950:#2A0E00;
+  --danger-50:#FFF3F1; --danger-100:#FFE4E0; --danger-200:#FFCBC4; --danger-300:#FFA79B; --danger-400:#FF7F71; --danger-500:#EA6356; --danger-600:#CB4C41; --danger-700:#A8372F; --danger-800:#82241E; --danger-900:#5A1410; --danger-950:#310504;
+
+  /* ===== type ===== */
+  --font-heading:'Space Grotesk', system-ui, sans-serif; --font-body:'Space Grotesk', system-ui, sans-serif; --font-serif:var(--font-body); --font-mono:'Space Mono', ui-monospace, monospace;
+  --font-display:var(--font-heading);
+  --text-2xs:0.6875rem; --text-xs:0.75rem; --text-sm:0.875rem; --text-base:1rem; --text-lg:1.125rem; --text-xl:1.25rem; --text-2xl:1.5rem; --text-3xl:1.875rem; --text-4xl:2.375rem; --text-5xl:3rem; --text-6xl:3.75rem;
+  --leading-tight:1.1; --leading-snug:1.25; --leading-normal:1.5; --leading-relaxed:1.7;
+  --weight-regular:400; --weight-medium:500; --weight-semibold:600; --weight-bold:700;
+  --tracking-tight:-0.02em; --tracking-normal:0em; --tracking-wide:0.02em; --tracking-display:-0.03em;
+
+  /* ===== spacing ===== */
+  --space-0:0; --space-1:0.25rem; --space-2:0.5rem; --space-3:0.75rem; --space-4:1rem; --space-5:1.25rem; --space-6:1.5rem; --space-8:2rem; --space-10:2.5rem; --space-12:3rem; --space-16:4rem; --space-20:5rem; --space-24:6rem; --space-32:8rem; --space-px:1px; --space-0_5:0.125rem; --space-1_5:0.375rem;
+
+  /* ===== radius ===== */
+  --radius-none:0; --radius-xs:0.25rem; --radius-sm:0.375rem; --radius-base:0.5rem; --radius-md:0.625rem; --radius-lg:0.875rem; --radius-xl:1.25rem; --radius-2xl:1.75rem; --radius-full:9999px;
+
+  /* ===== z-index ===== */
+  --z-base:0; --z-dropdown:1000; --z-sticky:1100; --z-backdrop:1200; --z-drawer:1300; --z-modal:1400; --z-popover:1500; --z-toast:1600; --z-tooltip:1700;
+
+  /* ===== motion ===== */
+  --dur-instant:0ms; --dur-fast:120ms; --dur-base:200ms; --dur-moderate:320ms; --dur-slow:480ms; --dur-deliberate:720ms;
+  --ease-standard:cubic-bezier(0.4,0,0.2,1); --ease-settle:cubic-bezier(0.2,0.8,0.2,1); --ease-grano:cubic-bezier(0.16,1,0.3,1); --ease-in:cubic-bezier(0.4,0,1,1); --ease-linear:linear;
+  --stagger-tight:40ms; --stagger-base:70ms; --stagger-loose:120ms;
+  --rise-sm:8px; --rise-base:16px; --rise-lg:32px;
+
+  /* ===== size ===== */
+  --focus-width:2px; --focus-offset:2px; --border-width:1px; --container-max:72rem; --container-narrow:48rem; --container-wide:90rem; --header-h:3.5rem; --sidebar-w:16rem; --drawer-width:26rem; --measure:65ch;
+
+  /* ===== effect ===== */
+  --border-style:solid; --surface-backdrop:none; --blur-sm:2px; --blur-base:4px; --blur-lg:10px;
+}
+
+/* ===== color: semantic — DARK (default) =====
+   Se define en :root Y en [data-theme="dark"] para que funcione con o sin el atributo. */
+:root,
+[data-theme="dark"] {
+  --bg:var(--tierra-950);
+  --surface:var(--tierra-900);
+  --surface-raised:var(--tierra-800);
+  --overlay:var(--tierra-800);
+  --border-subtle:var(--tierra-800);
+  --border:var(--tierra-700);
+  --border-strong:var(--tierra-600);
+  --text:var(--tierra-50);
+  --text-secondary:var(--tierra-300);
+  --text-muted:var(--tierra-400);
+  --text-on-accent:var(--tierra-950);
+  --on-danger:var(--tierra-950);
+  --on-secondary:var(--tierra-950);
+  --accent:var(--oro-300);
+  --accent-hover:var(--oro-200);
+  --accent-active:var(--oro-400);
+  --accent-subtle:var(--oro-950);
+  --accent-text:var(--oro-300);
+  --secondary:var(--olivo-500);
+  --secondary-hover:var(--olivo-400);
+  --secondary-active:var(--olivo-600);
+  --secondary-subtle:var(--olivo-950);
+  --secondary-border:var(--olivo-800);
+  --secondary-text:var(--olivo-400);
+  --success:var(--success-400);
+  --success-bg:var(--success-950);
+  --success-border:var(--success-800);
+  --warning:var(--warning-400);
+  --warning-bg:var(--warning-950);
+  --warning-border:var(--warning-800);
+  --danger:var(--danger-400);
+  --danger-hover:var(--danger-300);
+  --danger-active:var(--danger-500);
+  --danger-bg:var(--danger-950);
+  --danger-border:var(--danger-800);
+  --info:var(--cielo-400);
+  --info-bg:var(--cielo-950);
+  --info-border:var(--cielo-800);
+  --focus:var(--oro-300);
+  --syntax-bg:var(--tierra-950);
+  --syntax-text:var(--tierra-50);
+  --syntax-keyword:var(--oro-300);
+  --syntax-string:var(--olivo-400);
+  --syntax-comment:var(--tierra-400);
+  --syntax-function:var(--warning-400);
+  --syntax-number:var(--cielo-400);
+  --syntax-punctuation:var(--tierra-300);
+  --syntax-variable:var(--tierra-50);
+  --syntax-tag:var(--danger-400);
+  --syntax-attribute:var(--success-400);
+  --viz-1:var(--oro-300);
+  --viz-2:var(--cielo-400);
+  --viz-3:var(--olivo-400);
+  --viz-4:var(--danger-500);
+  --viz-5:var(--success-400);
+  --viz-6:var(--warning-400);
+  --viz-1-active:var(--oro-400);
+  --viz-2-active:var(--cielo-500);
+  --viz-3-active:var(--olivo-500);
+  --viz-4-active:var(--danger-600);
+  --viz-5-active:var(--success-500);
+  --viz-6-active:var(--warning-500);
+  /* ===== elevation (dark) ===== */
+  --shadow-sm:0 1px 2px rgba(0,0,0,0.4);
+  --shadow-base:0 2px 8px rgba(0,0,0,0.45);
+  --shadow-md:0 8px 24px rgba(0,0,0,0.5);
+  --shadow-lg:0 16px 48px rgba(0,0,0,0.55);
+}
+
+/* ===== color: semantic — LIGHT =====
+   Regla 2: los acentos se profundizan en light. El primario NO es fill dorado (el oro no
+   contrasta como fill sobre crema) — es GHOST: borde var(--accent) + texto var(--accent-text). */
+[data-theme="light"] {
+  --bg:var(--tierra-100);
+  --surface:var(--tierra-50);
+  --surface-raised:var(--tierra-50);
+  --overlay:var(--tierra-50);
+  --border-subtle:var(--tierra-300);
+  --border:var(--tierra-600);
+  --border-strong:var(--tierra-700);
+  --text:var(--tierra-950);
+  --text-secondary:var(--tierra-800);
+  --text-muted:var(--tierra-700);
+  --text-on-accent:var(--tierra-950);
+  --on-danger:var(--tierra-50);
+  --on-secondary:var(--tierra-50);
+  --accent:var(--oro-600);
+  --accent-hover:var(--oro-700);
+  --accent-active:var(--oro-800);
+  --accent-subtle:var(--oro-100);
+  --accent-text:var(--oro-700);
+  --secondary:var(--olivo-800);
+  --secondary-hover:var(--olivo-900);
+  --secondary-active:var(--olivo-900);
+  --secondary-subtle:var(--olivo-100);
+  --secondary-border:var(--olivo-300);
+  --secondary-text:var(--olivo-700);
+  --success:var(--success-700);
+  --success-bg:var(--success-100);
+  --success-border:var(--success-300);
+  --warning:var(--warning-700);
+  --warning-bg:var(--warning-100);
+  --warning-border:var(--warning-300);
+  --danger:var(--danger-700);
+  --danger-hover:var(--danger-800);
+  --danger-active:var(--danger-900);
+  --danger-bg:var(--danger-100);
+  --danger-border:var(--danger-300);
+  --info:var(--cielo-700);
+  --info-bg:var(--cielo-100);
+  --info-border:var(--cielo-300);
+  --focus:var(--oro-700);
+  --syntax-bg:var(--tierra-50);
+  --syntax-text:var(--tierra-950);
+  --syntax-keyword:var(--oro-700);
+  --syntax-string:var(--olivo-700);
+  --syntax-comment:var(--tierra-700);
+  --syntax-function:var(--warning-700);
+  --syntax-number:var(--cielo-700);
+  --syntax-punctuation:var(--tierra-800);
+  --syntax-variable:var(--tierra-950);
+  --syntax-tag:var(--danger-700);
+  --syntax-attribute:var(--success-700);
+  --viz-1:var(--oro-600);
+  --viz-2:var(--cielo-700);
+  --viz-3:var(--olivo-700);
+  --viz-4:var(--danger-800);
+  --viz-5:var(--success-800);
+  --viz-6:var(--warning-700);
+  --viz-1-active:var(--oro-700);
+  --viz-2-active:var(--cielo-800);
+  --viz-3-active:var(--olivo-800);
+  --viz-4-active:var(--danger-900);
+  --viz-5-active:var(--success-900);
+  --viz-6-active:var(--warning-800);
+  /* ===== elevation (light) ===== */
+  --shadow-sm:0 1px 2px rgba(23,18,13,0.08);
+  --shadow-base:0 2px 8px rgba(23,18,13,0.1);
+  --shadow-md:0 8px 24px rgba(23,18,13,0.12);
+  --shadow-lg:0 16px 48px rgba(23,18,13,0.14);
+}
+
+} /* @layer milpa.tokens */

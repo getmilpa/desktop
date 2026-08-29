@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milpa Desktop</title>
+<link rel="stylesheet" href="ds/fonts.css">
+<link rel="stylesheet" href="ds/tokens/milpa-tokens.css">
+<link rel="stylesheet" href="ds/_ds_bundle.css">
+<style>
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font-body);overflow:hidden}
+  .app{display:flex;flex-direction:column;height:100vh}
+  .dv-note{font-family:var(--font-mono);font-size:var(--text-2xs);line-height:1.4;color:var(--text-muted);letter-spacing:.02em}
+  .wf-box{border:1px solid var(--border-strong);border-radius:var(--radius-base);color:var(--text-muted);display:flex;align-items:center;justify-content:center}
+  .msg-user{display:flex;justify-content:flex-end}
+  .msg-user > div{max-width:60ch;padding:var(--space-3) var(--space-4);border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
+  .msg-agent{max-width:72ch}
+  .conv{flex:1;min-height:0;overflow:auto;padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-4)}
+  .statusbar{flex:none;display:flex;align-items:center;gap:var(--space-4);height:30px;padding:0 var(--space-3);border-top:1px solid var(--border-subtle);background:var(--surface);font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-muted)}
+  /* ── the loader: the M germinating from its grains (milpa-design) ───────────────── */
+  @keyframes milpa-germina {
+    0%   { opacity: 0; transform: translateY(7px) scale(0.15); }
+    10%  { opacity: 1; transform: translateY(0)   scale(1.12); }
+    18%  { transform: scale(1); }
+    60%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0.12; transform: scale(0.88); }
+  }
+  .milpa-loader{width:104px;height:104px;display:block;filter:drop-shadow(0 2px 10px rgba(232,177,76,.18))}
+  .milpa-loader .grano{transform-box:fill-box;transform-origin:center;opacity:1}
+  #auth-screen.booting .milpa-loader .grano{
+    animation: milpa-germina 2.2s var(--ease-grano, cubic-bezier(0.16,1,0.3,1)) infinite;
+    animation-delay: calc(var(--i) * 0.07s);
+  }
+  @media (prefers-reduced-motion: reduce){
+    #auth-screen.booting .milpa-loader .grano{ animation: none; opacity: 1; }
+  }
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<!-- ============ AUTH / LAUNCH (1a) ============ -->
+<div id="auth-screen" class="booting" style="position:fixed;inset:0;z-index:100;display:grid;grid-template-columns:1fr 440px;background:var(--bg);color:var(--text);font-family:var(--font-body)">
+  <div style="position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding:var(--space-8);border-inline-end:1px solid var(--border-subtle);background:var(--surface)">
+    <div style="position:absolute;top:var(--space-8);inset-inline-start:var(--space-8);display:flex;flex-direction:column;gap:var(--space-3)"><svg class="milpa-loader" viewBox="0 0 60 60" role="img" aria-label="Milpa"><rect class="grano" style="--i:0" x="0" y="0" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:1" x="0" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:2" x="0" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:3" x="0" y="37.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:4" x="0" y="50" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:5" x="12.5" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:6" x="25" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:7" x="37.5" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:8" x="50" y="0" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:9" x="50" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:10" x="50" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:11" x="50" y="37.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:12" x="50" y="50" width="10" height="10" rx="2.5" fill="#E8B14C"/></svg><p class="dv-note" id="loader-caption">levantando el runtime…</p></div>
+    <p class="mui-section__kicker" style="margin:0 0 var(--space-2)">puesto de trabajo local</p>
+    <h1 style="font-family:var(--font-heading);font-size:var(--text-4xl);line-height:1.05;margin:0 0 var(--space-3)" data-i18n="launch.title">Milpa Desktop</h1>
+    <p style="margin:0;max-width:34ch;font-size:var(--text-sm);color:var(--text-secondary)" data-i18n="launch.subtitle">Open a Milpa app to start, understand and resume an agent’s work sessions. The session is the unit; nothing runs on open.</p>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:var(--space-5);padding:var(--space-8) var(--space-6);overflow:auto">
+    <div class="mui-stack">
+      <div class="mui-field">
+        <label class="mui-field__label" for="a-app">App Milpa <span class="mui-field__required">*</span></label>
+        <div class="mui-input-group mui-input-group--suffix"><input id="a-app" class="mui-input" style="font-family:var(--font-mono);font-size:var(--text-xs)" value="getmilpa/framework (contenedor)" readonly><span class="mui-input-group__suffix"><span class="mui-kbd">⌘O</span></span></div>
+        <span class="mui-field__hint">Se lee <code>.milpa/foundation.json</code>. Una app a la vez.</span>
+      </div>
+      <div class="mui-field">
+        <span class="mui-field__label" data-i18n="auth.identityLabel">Decision identity</span>
+        <label class="mui-choice"><input class="mui-radio" type="radio" name="a-id" checked><span class="mui-choice__text"><span data-i18n="auth.systemUser">System user</span><span class="mui-choice__hint" data-i18n="auth.systemUserHint">Not verified. Call signatures are requested separately.</span></span></label>
+        <label class="mui-choice"><input class="mui-radio" type="radio" name="a-id"><span class="mui-choice__text"><span data-i18n="auth.verifiedPrincipal">Principal verified by signature</span><span class="mui-choice__hint" data-i18n="auth.verifiedHint">Requires an external mechanism configured.</span></span></label>
+      </div>
+      <div class="mui-field">
+        <label class="mui-field__label" for="a-prov" data-i18n="auth.modelProvider">Model provider</label>
+        <span class="mui-select-wrap"><select id="a-prov" class="mui-select"><option id="a-prov-local" data-i18n="provider.local">Local model</option><option data-i18n="provider.lan">Local-network model</option><option data-i18n="provider.external">External provider</option></select></span>
+        <span class="mui-field__hint" data-i18n="auth.providerHint">Local, LAN and remote third-party show differently in the status bar.</span>
+      </div>
+    </div>
+    <div class="mui-alert mui-alert--warning" role="note"><span class="mui-alert__icon">!</span><div class="mui-alert__content"><p class="mui-alert__title" data-i18n="auth.alertTitle">Your system user is not a verified identity</p><p class="mui-alert__desc" data-i18n="auth.alertDesc">Authorizing in a session grants the operation; it is not the same as signing the call.</p></div></div>
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:var(--space-3)">
+      <button type="button" class="mui-btn mui-btn--primary mui-btn--full mui-btn--lg" id="auth-open" data-i18n="launch.opening" disabled>Bringing the runtime up…</button>
+      <div class="mui-cluster mui-cluster--sm" style="justify-content:space-between"><button type="button" class="mui-btn mui-btn--ghost mui-btn--sm" data-i18n="launch.newApp">Found a new app</button><span class="dv-note">runtime local: <span class="mui-badge mui-badge--info mui-badge--dot" id="auth-sidecar">levantando…</span></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="app" hidden>
+  <!-- ── shell: sidebar + main ─────────────────────────────────────────────── -->
+  <div class="mui-shell" style="flex:1;min-height:0;--_sidebar-w:15rem;overflow:hidden">
+    <nav class="mui-sidebar" aria-label="principal" style="position:static;height:auto;min-height:0">
+      <span class="mui-sidebar__brand"><svg class="milpa-mark" viewBox="0 0 60 60" width="22" height="22" aria-hidden="true" style="flex:none"><rect x="0" y="0" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="0" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="0" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="0" y="37.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="0" y="50" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="12.5" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="25" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="37.5" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="0" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="37.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="50" width="10" height="10" rx="2.5" fill="#E8B14C"/></svg><span class="mui-sidebar__wordmark">Milpa</span></span>
+      <div class="mui-sidebar__nav">
+        <div class="mui-sidebar__section">
+          <a class="mui-sidebar__item" href="#" data-nav="sesiones" aria-current="page"><span class="mui-sidebar__item-icon" style="width:16px;height:16px"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="2"/><line x1="5" y1="6.7" x2="11" y2="6.7"/><line x1="5" y1="9.3" x2="9" y2="9.3"/></svg></span><span class="mui-sidebar__item-label" data-i18n="nav.sessions">Sessions</span></a>
+          <a class="mui-sidebar__item" href="#" data-nav="decisiones"><span class="mui-sidebar__item-icon" style="width:16px;height:16px"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.6 L13.4 8 L8 13.4 L2.6 8 Z"/><line x1="8" y1="5.9" x2="8" y2="8.5"/><circle cx="8" cy="10.5" r="0.35" fill="currentColor" stroke="none"/></svg></span><span class="mui-sidebar__item-label" data-i18n="nav.decisions">Decisions</span><span id="nav-decisiones-badge" class="mui-sidebar__item-badge mui-badge mui-badge--warning" hidden>0</span></a>
+          <a class="mui-sidebar__item" href="#" data-nav="capacidades"><span class="mui-sidebar__item-icon" style="width:16px;height:16px"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="2.6" width="4.6" height="4.6" rx="1.2"/><rect x="8.8" y="2.6" width="4.6" height="4.6" rx="1.2"/><rect x="2.6" y="8.8" width="4.6" height="4.6" rx="1.2"/><rect x="8.8" y="8.8" width="4.6" height="4.6" rx="1.2"/></svg></span><span class="mui-sidebar__item-label" data-i18n="nav.capabilities">Capabilities</span></a>
+          <a class="mui-sidebar__item" href="#" data-nav="componentes"><span class="mui-sidebar__item-icon" style="width:16px;height:16px"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="5" height="5" rx="1"/><rect x="8.5" y="2.5" width="5" height="5" rx="1"/><rect x="2.5" y="8.5" width="11" height="5" rx="1"/></svg></span><span class="mui-sidebar__item-label" data-i18n="nav.components">Components</span></a>
+          <a class="mui-sidebar__item" href="#" data-nav="ajustes"><span class="mui-sidebar__item-icon" style="width:16px;height:16px"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5.3" x2="13" y2="5.3"/><line x1="3" y1="10.7" x2="13" y2="10.7"/><circle cx="6" cy="5.3" r="1.7" fill="currentColor" stroke="none"/><circle cx="10" cy="10.7" r="1.7" fill="currentColor" stroke="none"/></svg></span><span class="mui-sidebar__item-label" data-i18n="nav.settings">Settings</span></a>
+        </div>
+        <div class="mui-sidebar__section">
+          <span class="mui-sidebar__section-label" data-i18n="nav.sessionsSection">sessions · goal and state</span>
+          <div id="session-list"><p class="dv-note" style="padding:0 var(--space-3)">Cargando…</p></div>
+        </div>
+      </div>
+      <div class="mui-sidebar__footer"><button type="button" class="mui-btn mui-btn--subtle mui-btn--sm mui-btn--full" id="new-session" data-i18n="session.new">New session</button></div>
+    </nav>
+
+    <header class="mui-topbar">
+      <div class="mui-topbar__start" style="flex-direction:column;align-items:flex-start;gap:0">
+        <span id="goal" style="font-size:var(--text-sm);font-weight:var(--weight-medium)">Milpa Desktop</span>
+        <span class="dv-note" id="goal-sub">puesto de trabajo local · una sesión es la unidad</span>
+      </div>
+      <div class="mui-topbar__end">
+        <span id="session-badge" class="mui-badge" hidden></span>
+        <span class="mui-badge" data-i18n="autonomy.ask">Ask before changing</span>
+        <button type="button" class="mui-btn mui-btn--ghost mui-btn--sm mui-btn--icon" aria-label="inspector" id="inspector-toggle"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3" width="11" height="10" rx="1.6"/><line x1="10" y1="3" x2="10" y2="13"/></svg></button>
+        <button type="button" class="mui-btn mui-btn--ghost mui-btn--sm mui-btn--icon" aria-label="tema" id="theme-toggle"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.3"/><path d="M8 2.7 A5.3 5.3 0 0 1 8 13.3 Z" fill="currentColor" stroke="none"/></svg></button>
+      </div>
+    </header>
+
+    <main class="mui-shell__main mui-shell__main--wide" style="padding:0;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+
+      <!-- ============ CHAT SCREEN (Sesiones) ============ -->
+      <div id="chat-screen" style="flex:1;min-height:0;display:flex;flex-direction:column">
+        <div class="mui-tabs" role="tablist" style="padding:0 var(--space-5);flex:none">
+          <button class="mui-tabs__tab" role="tab" aria-selected="true" type="button" data-tab="conversacion" data-i18n="tab.conversation">Conversation</button>
+          <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-tab="trabajo" data-i18n="tab.work">Work</button>
+          <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-tab="actividad" data-i18n="tab.activity">Activity</button>
+          <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-tab="contexto" data-i18n="tab.context">Context</button>
+        </div>
+        <div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 24rem;overflow:hidden">
+          <div style="display:flex;flex-direction:column;min-height:0;border-inline-end:1px solid var(--border-subtle)">
+            <section data-panel="conversacion" style="flex:1;min-height:0;display:flex;flex-direction:column">
+              <div class="conv" id="conv">
+                <div class="mui-empty" style="margin:auto;text-align:center;max-width:52ch">
+                  <p class="mui-section__kicker">nueva sesión</p>
+                  <h1 style="font-family:var(--font-heading);font-size:var(--text-3xl);margin:var(--space-2) 0">Milpa Desktop</h1>
+                  <p class="mui-empty__desc" style="font-size:var(--text-sm)">Describe tu tarea en tus propias palabras. El agente elige herramientas, explica su plan y te consulta antes de cambios críticos. Nada se ejecuta al abrir.</p>
+                </div>
+              </div>
+              <div style="flex:none;padding:0 var(--space-5) var(--space-5)">
+                <div class="mui-compose" style="border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--surface);padding:var(--space-3)">
+                  <textarea class="mui-textarea" id="query" rows="2" data-i18n-ph="send.placeholder" placeholder="Write to the session — Continue drives it" style="border:0;background:transparent;min-height:3.25rem;padding:0;width:100%;resize:none"></textarea>
+                  <div class="mui-cluster mui-cluster--sm" style="margin-top:var(--space-2)">
+                    <button type="button" class="mui-btn mui-btn--ghost mui-btn--sm mui-btn--icon" aria-label="adjuntar">＋</button>
+                    <span class="mui-badge" data-i18n="autonomy.ask">Ask before changing</span>
+                    <span class="dv-note" id="model-chip" style="margin-inline-start:auto">modelo…</span>
+                    <button type="button" class="mui-btn mui-btn--primary mui-btn--sm" id="send" data-i18n="send.button">Continue session</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section data-panel="trabajo" hidden style="flex:1;min-height:0;padding:var(--space-5);overflow:auto"><p class="dv-note">Sin trabajo aún. Envía una consulta para que el agente escriba su plan.</p></section>
+            <section data-panel="actividad" hidden style="flex:1;min-height:0;padding:var(--space-5);overflow:auto"><p class="dv-note" data-i18n="activity.empty">The session log appears here as soon as there are facts.</p></section>
+            <section data-panel="contexto" hidden style="flex:1;min-height:0;padding:var(--space-5);overflow:auto"><p class="dv-note" data-i18n="context.empty">Session context.</p></section>
+          </div>
+          <aside class="mui-drawer mui-drawer--docked" id="inspector" style="display:flex;min-height:0;flex-direction:column">
+            <div class="mui-drawer__header"><h2 class="mui-drawer__title" data-i18n="inspector.title">Inspector</h2></div>
+            <div class="mui-drawer__body mui-stack" id="inspector-body" style="overflow:auto"><p class="dv-note" data-i18n="inspector.empty">Open a session to see its plan, permissions and blockers.</p></div>
+          </aside>
+        </div>
+      </div>
+
+      <!-- ============ SETTINGS SCREEN (Ajustes) ============ -->
+      <div data-screen="ajustes" hidden style="flex:1;min-height:0;padding:var(--space-6);overflow:auto">
+        <div class="mui-tabs" role="tablist" style="margin-bottom:var(--space-5)">
+          <button class="mui-tabs__tab" role="tab" aria-selected="true" type="button" data-i18n="settings.tabModel">Model and provider</button>
+          <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-i18n="settings.tabAutonomy">Autonomy</button>
+          <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-i18n="settings.tabContext">Context and storage</button>
+          <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-i18n="settings.tabAppearance">Appearance</button>
+          <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-i18n="settings.tabFoundation">Foundation</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5);align-items:start">
+          <div class="mui-card mui-card--raised"><div class="mui-card__header"><h2 class="mui-card__title" data-i18n="settings.tabModel">Model and provider</h2></div><div class="mui-card__body mui-stack">
+            <div class="mui-field"><label class="mui-field__label" data-i18n="settings.provider">Provider</label><span class="mui-select-wrap"><select class="mui-select"><option data-i18n="provider.local">Local model</option><option data-i18n="provider.lan">Local-network model</option><option data-i18n="provider.external">External provider</option></select></span></div>
+            <div class="mui-field"><label class="mui-field__label">Endpoint</label><input class="mui-input" id="set-endpoint" style="font-family:var(--font-mono);font-size:var(--text-xs)" value=""><span class="mui-field__hint" data-i18n="settings.endpointHint">The endpoint receives the model’s context. It runs no operations.</span></div>
+            <div class="mui-field mui-field--row"><input class="mui-switch" type="checkbox" id="set-stream" checked><label class="mui-field__label" for="set-stream" data-i18n="settings.showLive">Show live work (streaming)</label></div>
+          </div></div>
+          <div class="mui-card mui-card--raised"><div class="mui-card__header"><h2 class="mui-card__title" data-i18n="autonomy.default">Default autonomy</h2></div><div class="mui-card__body mui-stack mui-stack--sm">
+            <label class="mui-choice"><input class="mui-radio" type="radio" name="mode" checked><span class="mui-choice__text"><span data-i18n="autonomy.ask">Ask before changing</span> <span class="mui-badge" style="margin-inline-start:6px">ask</span><span class="mui-choice__hint" data-i18n="autonomy.askHint">Pauses mutations without a standing permission.</span></span></label>
+            <label class="mui-choice"><input class="mui-radio" type="radio" name="mode"><span class="mui-choice__text"><span data-i18n="autonomy.auto">Continue automatically</span> <span class="mui-badge" style="margin-inline-start:6px">auto</span><span class="mui-choice__hint" data-i18n="autonomy.autoHint">Does not pause on mutation; signatures and incomplete intent still stop it.</span></span></label>
+            <div class="mui-alert mui-alert--info" role="note"><span class="mui-alert__icon">i</span><div class="mui-alert__content"><p class="mui-alert__desc" data-i18n="autonomy.note">These values are not yet three behaviourally distinct levels.</p></div></div>
+          </div></div>
+          <div class="mui-card"><div class="mui-card__header"><h2 class="mui-card__title" data-i18n="settings.tabContext">Context and storage</h2></div><div class="mui-card__body mui-stack mui-stack--sm">
+            <div class="mui-field mui-field--row" style="justify-content:space-between"><label class="mui-field__label" data-i18n="settings.autoCompact">Compact context automatically</label><input class="mui-switch" type="checkbox" checked></div>
+            <p class="dv-note" data-i18n="settings.compactNote">Compaction reduces what the model sees, never the session log.</p>
+            <div class="mui-field"><label class="mui-field__label" data-i18n="settings.sessionsFolder">Sessions folder</label><input class="mui-input mui-input--sm" style="font-family:var(--font-mono);font-size:var(--text-xs)" value="var/agent-sessions.jsonl" readonly></div>
+          </div></div>
+          <div class="mui-card"><div class="mui-card__header"><h2 class="mui-card__title" data-i18n="settings.tabAppearance">Appearance</h2></div><div class="mui-card__body mui-stack mui-stack--sm">
+            <div class="mui-field"><span class="mui-field__label" data-i18n="settings.language">Language</span><div class="mui-cluster mui-cluster--sm"><button type="button" class="mui-btn mui-btn--sm" data-lang-set="system" data-i18n="lang.system">System</button><button type="button" class="mui-btn mui-btn--sm" data-lang-set="en" data-i18n="lang.english">English</button><button type="button" class="mui-btn mui-btn--sm" data-lang-set="es" data-i18n="lang.spanish">Español</button></div></div>
+              <div class="mui-field"><span class="mui-field__label" data-i18n="settings.theme">Theme</span><div class="mui-cluster mui-cluster--sm"><button type="button" class="mui-btn mui-btn--sm" data-theme-set="system" aria-pressed="true" data-i18n="theme.system">System</button><button type="button" class="mui-btn mui-btn--sm" data-theme-set="dark" data-i18n="theme.dark">Dark</button><button type="button" class="mui-btn mui-btn--sm" data-theme-set="light" data-i18n="theme.light">Light</button></div></div>
+            <div class="mui-field mui-field--row" style="justify-content:space-between"><label class="mui-field__label" data-i18n="settings.reducedMotion">Respect reduced motion</label><input class="mui-switch" type="checkbox" checked></div>
+          </div></div>
+        </div>
+        <div class="mui-cluster" style="margin-top:var(--space-6);justify-content:flex-end"><button type="button" class="mui-btn" data-i18n="settings.discard">Discard changes</button><button type="button" class="mui-btn mui-btn--primary" data-i18n="settings.save">Save settings</button></div>
+      </div>
+
+      <div data-screen="decisiones" hidden style="flex:1;padding:var(--space-6);overflow:auto"><p class="mui-section__kicker" data-i18n="decisions.kicker">decisions inbox</p><p class="dv-note" id="decisiones-body" data-i18n="decisions.empty">Pending questions from all sessions appear here.</p></div>
+      <div data-screen="capacidades" hidden style="flex:1;padding:var(--space-6);overflow:auto"><p class="mui-section__kicker">capacidades</p><p class="dv-note">Lo que esta app puede hacer hoy, y cómo crece (de <code>capabilities</code>).</p></div>
+      <div data-screen="componentes" hidden style="flex:1;padding:var(--space-6);overflow:auto"><p class="mui-section__kicker" data-i18n="components.kicker">live preview</p><p class="dv-note" data-i18n="components.intro" style="margin:var(--space-1) 0 var(--space-4);max-width:70ch">See what the agent is building — any screen it authors the Milpa way, rendered live and hosted here. "How does it look?", answered.</p><div class="mui-cluster mui-cluster--sm" style="margin-bottom:var(--space-4);align-items:center"><label class="mui-field__label" for="preview-name" style="margin:0" data-i18n="components.which">Screen</label><input class="mui-input mui-input--sm" id="preview-name" value="tasks" placeholder="component / screen name" style="max-width:26ch;font-family:var(--font-mono);font-size:var(--text-xs)"><button type="button" class="mui-btn mui-btn--sm" id="preview-go" data-i18n="components.preview">Preview</button></div><div id="component-host" class="mui-card mui-card--raised"><div class="mui-card__body"><p class="dv-note" data-i18n="components.loading">Rendering the component…</p></div></div></div>
+    </main>
+  </div>
+
+  <!-- ── identity panel (custody + keys + signed acts) ─────────────────────────── -->
+  <div id="id-modal" hidden style="position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:rgba(0,0,0,.45)">
+    <div class="mui-card" style="width:min(560px,92vw);max-height:86vh;overflow:auto">
+      <div class="mui-card__header" style="display:flex;align-items:center;justify-content:space-between">
+        <strong data-i18n="identity.title">Identity</strong>
+        <button type="button" class="mui-btn mui-btn--ghost mui-btn--sm mui-btn--icon" id="id-close" aria-label="cerrar">✕</button>
+      </div>
+      <div class="mui-card__body mui-stack">
+        <p class="dv-note" id="id-custody" data-i18n="identity.custodyReading">Reading custody…</p>
+        <div id="id-keys"></div>
+        <div class="mui-stack" id="id-actions" style="gap:var(--space-2)">
+          <button type="button" class="mui-btn mui-btn--full" id="id-keygen" data-i18n="identity.keygen">Create keys (software)</button>
+          <label style="display:flex;flex-direction:column;gap:4px">
+            <span class="dv-note" data-i18n="identity.scopesLabel">Scopes to recognize</span>
+            <input id="id-scopes" class="mui-input" value="agent:read agent:answer" />
+          </label>
+          <button type="button" class="mui-btn mui-btn--primary mui-btn--full" id="id-enroll" data-i18n="identity.enroll">Enroll / own this session</button>
+          <button type="button" class="mui-btn mui-btn--subtle mui-btn--full" id="id-bootstrap" data-i18n="identity.bootstrap" hidden>Bootstrap (first root, empty house)</button>
+        </div>
+        <p class="dv-note" id="id-msg"></p>
+        <p class="dv-note" style="font-size:var(--text-xs);opacity:.7">La firma ocurre en el contenedor sobre tus llaves montadas del host; el Desktop nunca ve la privada. Con YubiKey conectada la custodia es hardware.</p>
+      </div>
+    </div>
+  </div>
+  <!-- ── status bar ────────────────────────────────────────────────────────── -->
+  <div class="statusbar">
+    <span id="st-live">◌ Conectando…</span>
+    <span id="st-model">modelo local</span>
+    <span id="st-counts"></span>
+    <span id="st-tokens" title="tokens del contexto — del stream (model_returned), nunca estimados"></span>
+    <span id="st-identity" title="quién te reconoce la casa — clic para gestionar" style="margin-inline-start:auto;cursor:pointer">◍ usuario del sistema</span>
+    <span id="st-version">m4-core local-agent</span>
+  </div>
+</div>
+<script src="i18n.js"></script>
+<!-- Milpa live client runtime: factory globals BEFORE Alpine walks the DOM (see renderer/live/VENDORED.md). -->
+<script defer src="live/milpa-live.js"></script>
+<script defer src="live/milpa-live-remote.js"></script>
+<script defer src="live/vendor/alpine.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
