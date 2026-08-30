@@ -33,8 +33,8 @@ const clean = (h) => h.replace(/^<p[^>]*>|<\/p>$/g, '')
 // ── conversation ────────────────────────────────────────────────────────────────────────────────
 function clearEmpty () { const e = $('#conv .mui-empty'); if (e) $('#conv').innerHTML = '' }
 function scroll () { const c = $('#conv'); c.scrollTop = c.scrollHeight }
-function addUser (text) {
-  clearEmpty(); const t = new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+function addUser (text, at) {
+  clearEmpty(); const t = (at ? new Date(at) : new Date()).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
   const w = el('div', { className: 'msg-user' }); const b = el('div')
   b.innerHTML = `<span class="dv-note">persona · ${t}</span><p style="margin:var(--space-1) 0 0;font-size:var(--text-sm)">${clean(md(text))}</p>`
   w.append(b); $('#conv').append(w); scroll()
@@ -215,6 +215,58 @@ async function send (forced) {
     if (!(lastShow && lastShow.question)) setLive('idle', tr('live.live'))   // the turn is done — don't leave «Trabajando…» stuck
   } else { if (ans) ans.innerHTML = md(tr('conv.driveError') + (res?.error || tr('conv.driveErrorHint'))); setLive('err', tr('live.error')) }
   scroll(); endBusy()
+}
+
+// ── repaint the conversation from the stream, so a reload never loses the transcript (no huecos) ──
+// Reconstructs turns from the session events with the SAME clean helpers the live path uses: user/assistant
+// turns from `session.turn`, the agent's reasoning and tool calls grouped into a collapsed trace, and the
+// answer cleaned of any raw `con:` argument blob. Runs once on open, before any live turn appends.
+async function paintHistory () {
+  const conv = $('#conv'); if (!conv || !bridge) return
+  let events = []
+  try { events = (await bridge.events(current, 0)).events || [] } catch { return }
+  if (!events.length) return
+  conv.innerHTML = ''                                   // drop the empty state; we have a transcript
+  let bubble = null
+  const ensureAgent = () => {
+    if (bubble) return
+    bubble = el('div', { className: 'msg-agent' })
+    bubble.innerHTML = `<details class="mui-trace"><summary class="dv-note">${tr('agent.working')}</summary><div class="h-reason mui-reasoning"></div><div class="h-tools" style="margin-top:var(--space-2)"></div></details><div class="h-answer" style="margin:var(--space-2) 0 0;font-size:var(--text-sm);line-height:var(--leading-relaxed)"></div>`
+    conv.append(bubble)
+  }
+  const close = (metaText, answerHtml) => {
+    if (!bubble) return
+    const sm = bubble.querySelector('summary'); if (sm && metaText) sm.textContent = metaText
+    const rz = bubble.querySelector('.h-reason'); if (rz && !rz.children.length) rz.remove()
+    const tl = bubble.querySelector('.h-tools'); if (tl && !tl.children.length) tl.remove()
+    const an = bubble.querySelector('.h-answer'); if (an && answerHtml != null) an.innerHTML = answerHtml
+    bubble = null
+  }
+  let steps = 0, toolN = 0
+  for (const e of events) {
+    const p = e.payload || {}
+    if (e.type === 'session.turn' && p.role === 'user') {
+      close(tr('agent.steps', { steps: steps || 1, tools: toolN }), null); steps = 0; toolN = 0
+      addUser(String(p.content || ''), e.recorded_at)
+    } else if (e.type === 'session.turn' && p.role === 'assistant') {
+      ensureAgent(); close(tr('agent.steps', { steps: steps || 1, tools: toolN }), md(cleanQuestion(String(p.content || '')) || tr('agent.noAnswer'))); steps = 0; toolN = 0
+    } else if (e.type === 'session.model_reasoned') {
+      ensureAgent()
+      const host = bubble.querySelector('.h-reason'); const t = String(p.reasoning || '').trim()
+      if (host && t) {
+        if (!host.dataset.kicked) { host.dataset.kicked = '1'; host.append(html(`<p class="mui-section__kicker" style="margin:0 0 var(--space-1)">${tr('agent.reasoning')}</p>`)) }
+        host.append(html(`<p class="dv-note" style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;margin:0 0 var(--space-2)">${clean(t)}</p>`))
+      }
+    } else if (e.type === 'session.tool_called') {
+      ensureAgent(); bubble.querySelector('.h-tools').append(toolCard(p)); toolN++
+    } else if (e.type === 'session.model_called') {
+      steps++
+    } else if (e.type === 'session.question_asked') {
+      ensureAgent(); close(tr('agent.parked'), md(tr('conv.parkedNote')))
+    }
+  }
+  close(tr('agent.steps', { steps: steps || 1, tools: toolN }), null)   // finalize any turn left open
+  scroll()
 }
 
 // ── agent:show → inspector, Work, Context, gate, status counts ──────────────────────────────────
@@ -690,7 +742,7 @@ $('#inspector-toggle')?.addEventListener('click', () => { $('#inspector').hidden
     document.querySelectorAll('[data-theme-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
     const v = b.dataset.themeSet; document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'
   }))
-  refreshSessions(); refreshShow()
+  refreshSessions(); await paintHistory(); refreshShow()
 })()
 
 
