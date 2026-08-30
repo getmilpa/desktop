@@ -89,7 +89,9 @@ function renderGate (q) {
     c.querySelectorAll('button').forEach(x => x.disabled = true)
     await bridge.answer(current, b.dataset.d)
     c.querySelector('.mui-gate__decisions').innerHTML = `<span class="mui-badge mui-badge--success">${tr('gate.answered', { answer: b.dataset.d })}</span>`
-    refreshShow()
+    // Authorizing IS the intent to continue — the system resolves the «Continue» verb for you (Rod's
+    // principle: never re-specify what the system can infer). A deny or a scope-adjust does not resume.
+    if (b.dataset.d === yesD) { await refreshShow(); send('continúa') } else { refreshShow() }
   }))
   const signBtn = c.querySelector('#gate-sign')
   if (signBtn) signBtn.addEventListener('click', async () => {
@@ -119,9 +121,16 @@ function renderGate (q) {
 }
 
 // ── drive + LIVE streaming (poll events while the agent runs) ────────────────────────────────────
-async function send () {
-  const ta = $('#query'); const q = ta.value.trim(); if (!q || sending || !bridge) return
-  sending = true; $('#send').disabled = true; ta.value = ''
+function startBusy () { sending = true; const b = $('#send'); if (b) { b.disabled = false; b.dataset.stop = '1'; b.textContent = tr('send.stop') } }
+function endBusy () { sending = false; const b = $('#send'); if (b) { b.disabled = false; delete b.dataset.stop; b.textContent = tr('send.button') } }
+async function stopAgent () {
+  if (!sending) return
+  await (bridge.stopAgent ? bridge.stopAgent() : Promise.resolve()).catch(() => {})
+  endBusy(); setLive('idle', tr('live.live')); refreshShow()
+}
+async function send (forced) {
+  const ta = $('#query'); const q = (forced != null ? forced : ta.value).trim(); if (!q || sending || !bridge) return
+  startBusy(); if (forced == null) ta.value = ''
   addUser(q); const bubble = addAgentBubble()
   setLive('working', tr('live.working'))
   const before = (await bridge.events(current, 0)).total
@@ -147,7 +156,7 @@ async function send () {
     if (ans) ans.innerHTML = md(tr('conv.parkedNote'))
     setLive('wait', tr('live.waiting'))
     await refreshShow()   // renders the gate (renderGate), the session badge and the Decisiones badge
-    scroll(); sending = false; $('#send').disabled = false
+    scroll(); endBusy()
   }
   const poll = setInterval(async () => {
     const { events } = await bridge.events(current, seen); if (!events.length) return
@@ -174,7 +183,7 @@ async function send () {
     await refreshShow()
     if (!(lastShow && lastShow.question)) setLive('idle', tr('live.live'))   // the turn is done — don't leave «Trabajando…» stuck
   } else { if (ans) ans.innerHTML = md(tr('conv.driveError') + (res?.error || tr('conv.driveErrorHint'))); setLive('err', tr('live.error')) }
-  scroll(); sending = false; $('#send').disabled = false
+  scroll(); endBusy()
 }
 
 // ── agent:show → inspector, Work, Context, gate, status counts ──────────────────────────────────
@@ -599,7 +608,7 @@ document.querySelectorAll('[data-nav]').forEach(n => n.addEventListener('click',
   if (v === 'agentes') renderAgents()
 }))
 $('#theme-toggle').addEventListener('click', () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === 'light' ? 'dark' : 'light' })
-$('#send').addEventListener('click', send)
+$('#send').addEventListener('click', () => { $('#send').dataset.stop ? stopAgent() : send() })
 $('#query').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() })
 $('#new-session')?.addEventListener('click', () => {
   // A fresh session id — the store creates it on the first drive. Reuses no context, no compaction.

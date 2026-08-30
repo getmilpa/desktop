@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('milpa', {
   events: (session, since) => ipcRenderer.invoke('milpa:events', { session, since }),
   // whether a driving agent run is live in the container — the renderer flags an INTERRUPTED prior run with this
   agentRunning: () => ipcRenderer.invoke('milpa:agentRunning'),
+  stopAgent: () => ipcRenderer.invoke('milpa:stopAgent'),
   // host a Milpa live web component rendered by the container (a Desktop screen authored the Milpa way)
   component: (name) => ipcRenderer.invoke('milpa:component', name),
   // The bridge transport for hosted live components: the remote runtime's POST routed through IPC to

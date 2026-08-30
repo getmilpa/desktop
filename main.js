@@ -160,6 +160,12 @@ ipcMain.handle('milpa:live', async (_e, { endpoint, body }) => {
     return { status: 0, data: { error: 'live endpoint unreachable: ' + String(e && e.message || e) } }
   }
 })
+ipcMain.handle('milpa:stopAgent', async () => {
+  // Interrupt an in-flight run so the user can steer with fresh context. Each turn is already persisted,
+  // so killing the exec stops the loop without losing the work — Continue resumes from the last fact.
+  try { await exec('docker', ['exec', NAME, 'pkill', '-f', 'bin/coa agent']) } catch {}
+  return { ok: true }
+})
 ipcMain.handle('milpa:agentRunning', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'sh', '-c', "pgrep -f 'coa agent .*--mode=ask' >/dev/null 2>&1 && echo yes || echo no"])
   return { running: /yes/.test(out) }
