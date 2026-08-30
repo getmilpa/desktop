@@ -10,14 +10,14 @@
 <style>
   html,body{height:100%;margin:0}
   body{background:var(--bg);color:var(--text);font-family:var(--font-body);overflow:hidden}
-  .app{display:flex;flex-direction:column;height:100vh}
+  .app{display:flex;flex-direction:column;height:100vh;--text-2xs:0.8rem;--text-xs:0.9rem;--text-sm:1.0625rem;--text-base:1.1875rem;--text-lg:1.375rem;--text-xl:1.625rem;--text-2xl:2rem;--text-3xl:2.5rem}
   .dv-note{font-family:var(--font-mono);font-size:var(--text-2xs);line-height:1.4;color:var(--text-muted);letter-spacing:.02em}
   .wf-box{border:1px solid var(--border-strong);border-radius:var(--radius-base);color:var(--text-muted);display:flex;align-items:center;justify-content:center}
   .msg-user{display:flex;justify-content:flex-end}
   .msg-user > div{max-width:60ch;padding:var(--space-3) var(--space-4);border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
   .msg-agent{max-width:72ch}
   .conv{flex:1;min-height:0;overflow:auto;padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-4)}
-  .statusbar{flex:none;display:flex;align-items:center;gap:var(--space-4);height:30px;padding:0 var(--space-3);border-top:1px solid var(--border-subtle);background:var(--surface);font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-muted)}
+  .statusbar{flex:none;display:flex;align-items:center;gap:var(--space-5);height:40px;padding:0 var(--space-4);border-top:1px solid var(--border-subtle);background:var(--surface);font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-muted)}
   /* ── the loader: the M germinating from its grains (milpa-design) ───────────────── */
   @keyframes milpa-germina {
     0%   { opacity: 0; transform: translateY(7px) scale(0.15); }
@@ -35,6 +35,13 @@
   @media (prefers-reduced-motion: reduce){
     #auth-screen.booting .milpa-loader .grano{ animation: none; opacity: 1; }
   }
+  /* live reasoning/trace: streams open while the agent works, collapses when the turn ends */
+  .mui-trace summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
+  .mui-trace summary::-webkit-details-marker{display:none}
+  .mui-trace summary::before{content:'▸';color:var(--text-muted);font-size:.8em;transition:transform var(--dur-fast,120ms) var(--ease-standard,ease)}
+  .mui-trace[open] summary::before{transform:rotate(90deg)}
+  .mui-reasoning{margin-top:var(--space-2);padding-inline-start:var(--space-3);border-inline-start:2px solid var(--border-strong);color:var(--text-muted)}
+  .mui-reasoning:empty{display:none}
   [hidden]{display:none!important}
 </style>
 </head>
@@ -75,7 +82,7 @@
 
 <div class="app" hidden>
   <!-- ── shell: sidebar + main ─────────────────────────────────────────────── -->
-  <div class="mui-shell" style="flex:1;min-height:0;--_sidebar-w:15rem;overflow:hidden">
+  <div class="mui-shell" style="flex:1;min-height:0;--_sidebar-w:17.5rem;overflow:hidden">
     <nav class="mui-sidebar" aria-label="principal" style="position:static;height:auto;min-height:0">
       <span class="mui-sidebar__brand"><svg class="milpa-mark" viewBox="0 0 60 60" width="22" height="22" aria-hidden="true" style="flex:none"><rect x="0" y="0" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="0" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="0" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="0" y="37.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="0" y="50" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="12.5" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="25" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="37.5" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="0" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="37.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect x="50" y="50" width="10" height="10" rx="2.5" fill="#E8B14C"/></svg><span class="mui-sidebar__wordmark">Milpa</span></span>
       <div class="mui-sidebar__nav">
@@ -96,7 +103,7 @@
       <div class="mui-sidebar__footer"><button type="button" class="mui-btn mui-btn--subtle mui-btn--sm mui-btn--full" id="new-session" data-i18n="session.new">New session</button></div>
     </nav>
 
-    <header class="mui-topbar">
+    <header class="mui-topbar" style="min-height:68px">
       <div class="mui-topbar__start" style="flex-direction:column;align-items:flex-start;gap:0">
         <span id="goal" style="font-size:var(--text-sm);font-weight:var(--weight-medium)">Milpa Desktop</span>
         <span class="dv-note" id="goal-sub">puesto de trabajo local · una sesión es la unidad</span>

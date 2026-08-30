@@ -53,15 +53,26 @@ function toolCard (p) {
 }
 function addAgentBubble () {
   clearEmpty(); const w = el('div', { className: 'msg-agent', id: 'live-agent' })
-  w.innerHTML = `<span class="dv-note" id="live-meta">${tr('agent.working')}</span><div id="live-tools"></div><div id="live-answer" style="margin:var(--space-2) 0 0;font-size:var(--text-sm);line-height:var(--leading-relaxed)"></div>`
+  w.innerHTML = `<details id="live-trace" class="mui-trace" open><summary class="dv-note" id="live-meta">${tr('agent.working')}</summary><div id="live-reasoning" class="mui-reasoning"></div><div id="live-tools" style="margin-top:var(--space-2)"></div></details><div id="live-answer" style="margin:var(--space-2) 0 0;font-size:var(--text-sm);line-height:var(--leading-relaxed)"></div>`
   $('#conv').append(w); scroll(); return w
 }
+
+// ── argument + question formatting (cabo: no raw JSON in the gate) ───────────────────────────────
+function fmtArgVal (v) {
+  if (v == null) return ''
+  if (typeof v === 'object') { try { const j = JSON.stringify(v); return j.length > 80 ? j.slice(0, 79) + '…' : j } catch { return String(v) } }
+  const x = String(v); return x.length > 80 ? x.slice(0, 79) + '…' : x
+}
+function fmtArgs (a) { return Object.entries(a || {}).map(([k, v]) => `${k}=${fmtArgVal(v)}`).join(' ') }
+// The backend sometimes appends the raw argument JSON to the question ("… con: {…}"). The arguments are
+// rendered structured in the facts line below, so strip the raw blob rather than dump it into the prose.
+function cleanQuestion (t) { if (!t) return t; const x = String(t).replace(/\s*(con:?\s*)?\{[\s\S]*\}\s*$/i, '').trim(); return x || String(t) }
 
 // ── the decision gate (from agent:show.question) ────────────────────────────────────────────────
 function renderGate (q) {
   if ($('#gate-card')) return
   let op = q.operation || q.tool || '—', args = '', parsedArgs = {}
-  try { const w = typeof q.why === 'string' ? JSON.parse(q.why) : (q.why || {}); if (w.operation) op = w.operation; if (w.arguments) { parsedArgs = w.arguments; args = Object.entries(w.arguments).map(([k, v]) => `${k}=${v}`).join(' ') } } catch {}
+  try { const w = typeof q.why === 'string' ? JSON.parse(q.why) : (q.why || {}); if (w.operation) op = w.operation; if (w.arguments) { parsedArgs = w.arguments; args = fmtArgs(w.arguments) } } catch {}
   const opts = Array.isArray(q.options) ? q.options : ['sí', 'no']
   const yesD = opts.includes('sí') ? 'sí' : opts[0]
   const denyD = opts.includes('no') ? 'no' : opts[opts.length - 1]
@@ -80,7 +91,7 @@ function renderGate (q) {
        <button type="button" class="mui-btn mui-btn--danger mui-btn--sm" data-d="${denyD}">${tr('gate.deny')}</button>`
   c.innerHTML = `<div class="mui-card__body mui-gate">
     <div class="mui-gate__request"><p class="mui-gate__actor" style="margin:0">${tr('gate.stopped')}</p>
-    <p class="mui-gate__action" style="margin:var(--space-1) 0">${clean(md(q.question || tr('gate.authRequired')))}</p>
+    <p class="mui-gate__action" style="margin:var(--space-1) 0">${clean(md(cleanQuestion(q.question) || tr('gate.authRequired')))}</p>
     <p class="mui-gate__facts" style="margin:0">${tr('gate.operation')} <strong>${op}</strong>${args ? ' · ' + args : ''} · ${tr('gate.reason')}: <strong>${q.reason || '—'}</strong> · ${tr('gate.authority')} · ${tr('gate.signature')}: <strong>${tr('gate.notPresented')}</strong></p></div>
     <div class="mui-gate__decisions">${decisions}</div>
     <p class="dv-note" id="gate-status" style="margin:var(--space-1) 0 0" aria-live="polite"></p>
@@ -121,6 +132,16 @@ function renderGate (q) {
 }
 
 // ── drive + LIVE streaming (poll events while the agent runs) ────────────────────────────────────
+// Each model call that reasons emits one `session.model_reasoned` with its full reasoning_content —
+// appended live into the collapsible trace, which folds it away when the turn resolves (cabo: stream then collapse).
+function appendReasoning (text) {
+  const t = (text || '').toString().trim(); if (!t) return
+  const host = $('#live-reasoning'); if (!host) return
+  if (!host.dataset.kicked) { host.dataset.kicked = '1'; host.append(html(`<p class="mui-section__kicker" style="margin:0 0 var(--space-1)">${tr('agent.reasoning')}</p>`)) }
+  host.append(html(`<p class="dv-note" style="white-space:pre-wrap;line-height:1.5;margin:0 0 var(--space-2)">${clean(t)}</p>`))
+  const m = $('#live-meta'); if (m) m.textContent = tr('agent.reasoningLive')
+  scroll()
+}
 function startBusy () { sending = true; const b = $('#send'); if (b) { b.disabled = false; b.dataset.stop = '1'; b.textContent = tr('send.stop') } }
 function endBusy () { sending = false; const b = $('#send'); if (b) { b.disabled = false; delete b.dataset.stop; b.textContent = tr('send.button') } }
 async function stopAgent () {
@@ -142,6 +163,8 @@ async function send (forced) {
     const meta = bubble.querySelector('#live-meta'); if (meta) { meta.className = 'dv-note'; meta.id = '' }
     const lt = bubble.querySelector('#live-tools'); if (lt) lt.id = ''
     const ans = bubble.querySelector('#live-answer'); if (ans) ans.id = ''
+    const lr = bubble.querySelector('#live-reasoning'); if (lr) lr.id = ''
+    const trace = bubble.querySelector('#live-trace'); if (trace) { trace.open = false; trace.id = '' }
     return { meta, ans }
   }
   // A turn ends two ways: it RETURNS (drive resolves with an answer) or it PARKS on a durable gate — the agent
@@ -163,6 +186,7 @@ async function send (forced) {
     for (const e of events) {
       if (e.type === 'session.tool_called') $('#live-tools')?.append(toolCard(e.payload))
       else if (e.type === 'session.model_called') { const m = $('#live-meta'); if (m) m.textContent = tr('agent.thinking', { model: e.payload.model || '' }) }
+      else if (e.type === 'session.model_reasoned') appendReasoning(e.payload && e.payload.reasoning)
       else if (e.type === 'session.question_asked') { await onParked(); return }
     }
     seen += events.length; scroll()
@@ -269,7 +293,7 @@ function renderInspector (show) {
   if (!steps.length && todos.length) steps = todos.map(t => ({ title: t.text || t.title, status: t.status }))
   if (steps.length) box.append(html(`<div><p class="mui-section__kicker" style="margin:0 0 var(--space-2)">${tr('inspector.plan')}</p><ol class="mui-steps">${steps.map(s => { const st = (s.status || '').toString(); const cl = st.match(/done|complete/) ? 'complete' : st.match(/active|progress|current|doing/) ? 'active' : ''; return `<li class="mui-steps__item" data-status="${cl}"><span class="mui-steps__marker"></span><span class="mui-steps__title">${s.title.toString().slice(0, 60)}</span></li>` }).join('')}</ol></div>`))
   const perms = show.permissions || []
-  if (perms.length) box.append(html(`<div><p class="mui-section__kicker" style="margin:0 0 var(--space-2)">${tr('inspector.permissions')}</p><div class="mui-stack mui-stack--sm">${perms.slice(0, 6).map(p => { const g = (p.status || p.grant || '').toString(); const b = g.match(/grant|otorg/) ? 'mui-badge--success' : g.match(/sign|firma/) ? 'mui-badge--warning' : g.match(/retir|revok/) ? 'mui-badge--danger' : ''; return `<div class="mui-cluster mui-cluster--sm" style="justify-content:space-between"><span class="dv-note">${p.operation || p.name || p.tool || p}</span><span class="mui-badge ${b}">${g || 'ver'}</span></div>` }).join('')}</div></div>`))
+  if (perms.length) box.append(html(`<div><p class="mui-section__kicker" style="margin:0 0 var(--space-2)">${tr('inspector.permissions')}</p><div class="mui-stack mui-stack--sm">${perms.slice(0, 6).map(p => { const g = (p.status || p.grant || '').toString(); const b = g.match(/grant|otorg/) ? 'mui-badge--success' : g.match(/sign|firma/) ? 'mui-badge--warning' : g.match(/retir|revok/) ? 'mui-badge--danger' : ''; return `<div class="mui-cluster mui-cluster--sm" style="justify-content:space-between"><span class="dv-note">${p.operation || p.name || p.tool || p}</span>${g ? `<span class="mui-badge ${b}">${g}</span>` : `<button type="button" class="mui-btn mui-btn--sm perm-view">${tr('perm.view')}</button>`}</div>` }).join('')}</div></div>`))
   if (!box.children.length) box.append(html(`<p class="dv-note">${tr('inspector.noPlan')}</p>`))
 }
 function html (s) { const t = el('template'); t.innerHTML = s.trim(); return t.content.firstElementChild }
@@ -369,10 +393,10 @@ function renderDecisiones (show) {
   let gate = `<div class="mui-card"><div class="mui-card__body"><p class="dv-note">${tr('decisions.none')}</p></div></div>`
   if (q) {
     let op = q.operation || q.tool || '—', args = ''
-    try { const w = typeof q.why === 'string' ? JSON.parse(q.why) : (q.why || {}); if (w.operation) op = w.operation; if (w.arguments) args = Object.entries(w.arguments).map(([k, v]) => k + '=' + v).join(' ') } catch {}
+    try { const w = typeof q.why === 'string' ? JSON.parse(q.why) : (q.why || {}); if (w.operation) op = w.operation; if (w.arguments) args = fmtArgs(w.arguments) } catch {}
     gate = `<div class="mui-card mui-card--raised" style="border-color:var(--warning-border);background:var(--warning-bg)"><div class="mui-card__body mui-gate">
       <div class="mui-gate__request"><p class="mui-gate__actor" style="margin:0">el gate detuvo la vuelta · pregunta durable, no un modal</p>
-      <p class="mui-gate__action" style="margin:var(--space-1) 0">${clean(md(q.question || tr('gate.authRequired')))}</p>
+      <p class="mui-gate__action" style="margin:var(--space-1) 0">${clean(md(cleanQuestion(q.question) || tr('gate.authRequired')))}</p>
       <p class="mui-gate__facts" style="margin:0">${tr('gate.operation')} <strong>${op}</strong>${args ? ' · ' + args : ''} · ${tr('gate.reason')}: <strong>${q.reason || '—'}</strong> · ${tr('gate.authority')} · ${tr('gate.signature')}: <strong>${tr('gate.notPresented')}</strong></p></div>
       <div class="mui-gate__decisions" id="dec-gate-actions">
         <button type="button" class="mui-btn mui-btn--primary mui-btn--sm" data-dd="sí">${tr('gate.authorize')}</button>
@@ -393,7 +417,7 @@ function renderDecisiones (show) {
     : `<p class="dv-note">${tr('decisions.noneYet')}</p>`
 
   const permList = perms.length
-    ? perms.map(p => { const name = p.operation || p.name || p.tool || p; const g = (p.status || p.grant || '').toString(); const b = g.match(/grant|otorg/) ? 'mui-badge--success' : g.match(/sign|firma/) ? 'mui-badge--warning' : g.match(/retir|revok/) ? 'mui-badge--danger' : ''; return `<div class="mui-cluster mui-cluster--sm" style="justify-content:space-between"><span class="dv-note">${name}</span><span class="mui-badge ${b}">${g || 'ver'}</span></div>` }).join('')
+    ? perms.map(p => { const name = p.operation || p.name || p.tool || p; const g = (p.status || p.grant || '').toString(); const b = g.match(/grant|otorg/) ? 'mui-badge--success' : g.match(/sign|firma/) ? 'mui-badge--warning' : g.match(/retir|revok/) ? 'mui-badge--danger' : ''; return `<div class="mui-cluster mui-cluster--sm" style="justify-content:space-between"><span class="dv-note">${name}</span>${g ? `<span class="mui-badge ${b}">${g}</span>` : `<button type="button" class="mui-btn mui-btn--sm perm-view">${tr('perm.view')}</button>`}</div>` }).join('')
     : `<p class="dv-note">${tr('decisions.noPerms')}</p>`
 
   scr.innerHTML = `<div class="mui-stack">
@@ -607,6 +631,10 @@ document.querySelectorAll('[data-nav]').forEach(n => n.addEventListener('click',
   if (v === 'skills') renderSkills()
   if (v === 'agentes') renderAgents()
 }))
+document.addEventListener('click', (e) => {
+  const v = e.target.closest && e.target.closest('.perm-view'); if (!v) return
+  e.preventDefault(); const nav = document.querySelector('[data-nav="decisiones"]'); if (nav) nav.click()
+})
 $('#theme-toggle').addEventListener('click', () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === 'light' ? 'dark' : 'light' })
 $('#send').addEventListener('click', () => { $('#send').dataset.stop ? stopAgent() : send() })
 $('#query').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() })
