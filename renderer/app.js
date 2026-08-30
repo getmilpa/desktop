@@ -715,12 +715,24 @@ $('#inspector-toggle')?.addEventListener('click', () => { $('#inspector').hidden
   const open = document.querySelector('#auth-open'); const sc = document.querySelector('#auth-sidecar'); const pl = document.querySelector('#a-prov-local')
   const auth = document.querySelector('#auth-screen'); const cap = document.querySelector('#loader-caption')
   if (pl) pl.textContent = `Modelo local · ${st.model.name} (${st.model.base.replace(/^https?:\/\//, '')})`
+  // Remember the workspace was opened, so a reload lands back in it (not on the launch gate) with the
+  // conversation already repainted from the stream — no huecos, no "perdió todo".
+  let entered = false
+  const enterWorkspace = () => {
+    if (entered) return; entered = true
+    try { localStorage.setItem('milpa.opened', '1') } catch {}
+    const a = document.querySelector('#auth-screen'); if (a) a.remove()
+    const app = document.querySelector('.app'); if (app) app.hidden = false
+  }
+  const wasOpened = () => { try { return localStorage.getItem('milpa.opened') === '1' } catch { return false } }
+  await paintHistory()   // paint the transcript BEFORE any reveal, so the reload shows it with no flash
   const markReady = () => {
     setLive('idle', tr('live.live'))
     if (sc) sc.textContent = tr('launch.sidecarReady')
     if (cap) cap.textContent = tr('loader.ready')
     if (auth) auth.classList.remove('booting')   // the grains stop germinating; the M holds
     if (open) { open.disabled = false; open.textContent = tr('launch.open') }
+    if (wasOpened()) enterWorkspace()   // returning user: skip the gate, go straight back into the app
   }
   if (st.backend) markReady()
   else {
@@ -729,7 +741,7 @@ $('#inspector-toggle')?.addEventListener('click', () => { $('#inspector').hidden
       if (s && s.backend) { clearInterval(boot); markReady() }
     }, 900)
   }
-  open?.addEventListener('click', () => { document.querySelector('#auth-screen').remove(); document.querySelector('.app').hidden = false })
+  open?.addEventListener('click', enterWorkspace)
   const ep = document.querySelector('#set-endpoint'); if (ep) ep.value = st.model.base + '/v1'
   document.querySelectorAll('[data-lang-set]').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('[data-lang-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
@@ -742,7 +754,7 @@ $('#inspector-toggle')?.addEventListener('click', () => { $('#inspector').hidden
     document.querySelectorAll('[data-theme-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
     const v = b.dataset.themeSet; document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'
   }))
-  refreshSessions(); await paintHistory(); refreshShow()
+  refreshSessions(); refreshShow()
 })()
 
 
