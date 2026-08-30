@@ -43,12 +43,12 @@ function toolCard (p) {
   const ok = p.ok !== false; const mut = p.awaitingConfirmation != null || /write|make|found|set|enable|disable|register/.test(p.tool || '')
   const d = el('details', { className: 'mui-card mui-card--compact' }); d.style.margin = 'var(--space-2) 0'
   const args = p.arguments && Object.keys(p.arguments).length ? Object.entries(p.arguments).map(([k, v]) => `${k}=${String(v).slice(0, 24)}`).join(' ') : ''
-  const res = String(p.result ?? '').slice(0, 600)
+  const res = fmtResult(p.result).slice(0, 800)
   d.innerHTML = `<summary style="display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);cursor:pointer;font-family:var(--font-mono);font-size:var(--text-xs)">
     <span class="mui-badge ${ok ? 'mui-badge--success' : 'mui-badge--danger'}">${ok ? 'ok' : 'err'}</span><span>${p.tool || 'tool'}</span>
     <span style="color:var(--text-muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${args}</span>
     <span class="mui-badge ${mut ? 'mui-badge--warning' : ''}" style="margin-inline-start:auto">${mut ? 'mutante' : 'llamada, no efecto'}</span></summary>
-    ${res ? `<div class="mui-terminal" style="margin:0 var(--space-3) var(--space-3)"><div class="mui-terminal__bar"><span class="dv-note">salida de la herramienta${p.resultChars ? ' · ' + p.resultChars + ' chars' : ''}</span></div><div class="mui-terminal__body"><p class="mui-terminal__line"><span class="mui-terminal__out" style="white-space:pre-wrap;overflow-wrap:anywhere">${md(res).replace(/<[^>]+>/g, '')}</span></p></div></div>` : ''}`
+    ${res ? `<div class="mui-terminal" style="margin:0 var(--space-3) var(--space-3)"><div class="mui-terminal__bar"><span class="dv-note">salida de la herramienta${p.resultChars ? ' · ' + p.resultChars + ' chars' : ''}</span></div><div class="mui-terminal__body"><p class="mui-terminal__line"><span class="mui-terminal__out" style="white-space:pre-wrap;overflow-wrap:anywhere">${clean(res)}</span></p></div></div>` : ''}`
   return d
 }
 function addAgentBubble () {
@@ -64,6 +64,13 @@ function fmtArgVal (v) {
   const x = String(v); return x.length > 80 ? x.slice(0, 79) + '…' : x
 }
 function fmtArgs (a) { return Object.entries(a || {}).map(([k, v]) => `${k}=${fmtArgVal(v)}`).join(' ') }
+// A tool result is usually a JSON envelope ({ok, error|result|message}). Show the human part with real
+// newlines (JSON.parse turns \n escapes into breaks); fall back to the raw text when it isn't JSON.
+function fmtResult (raw) {
+  const s = String(raw ?? '')
+  try { const j = JSON.parse(s); if (j && typeof j === 'object') return String(j.error ?? j.result ?? j.message ?? JSON.stringify(j, null, 2)) } catch {}
+  return s.replace(/\\n/g, '\n')
+}
 // The backend sometimes appends the raw argument JSON to the question ("… con: {…}"). The arguments are
 // rendered structured in the facts line below, so strip the raw blob rather than dump it into the prose.
 function cleanQuestion (t) { if (!t) return t; const x = String(t).replace(/\n*\s*con:\s*\{[\s\S]*\}\s*$/i, '').trim(); return x || String(t) }
