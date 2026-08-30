@@ -66,7 +66,7 @@ function fmtArgVal (v) {
 function fmtArgs (a) { return Object.entries(a || {}).map(([k, v]) => `${k}=${fmtArgVal(v)}`).join(' ') }
 // The backend sometimes appends the raw argument JSON to the question ("… con: {…}"). The arguments are
 // rendered structured in the facts line below, so strip the raw blob rather than dump it into the prose.
-function cleanQuestion (t) { if (!t) return t; const x = String(t).replace(/\s*(con:?\s*)?\{[\s\S]*\}\s*$/i, '').trim(); return x || String(t) }
+function cleanQuestion (t) { if (!t) return t; const x = String(t).replace(/\n*\s*con:\s*\{[\s\S]*\}\s*$/i, '').trim(); return x || String(t) }
 
 // ── the decision gate (from agent:show.question) ────────────────────────────────────────────────
 function renderGate (q) {
@@ -202,7 +202,7 @@ async function send (forced) {
       if (ans) ans.innerHTML = md(tr('conv.parkedNote'))
     } else {
       if (meta) meta.textContent = tr('agent.steps', { steps: res.steps || '', tools: res.tools || '' })
-      if (ans) ans.innerHTML = md(res.answer || tr('agent.noAnswer'))
+      if (ans) ans.innerHTML = md(cleanQuestion(res.answer) || tr('agent.noAnswer'))
     }
     await refreshShow()
     if (!(lastShow && lastShow.question)) setLive('idle', tr('live.live'))   // the turn is done — don't leave «Trabajando…» stuck
