@@ -46,9 +46,9 @@ function toolCard (p) {
   const res = String(p.result ?? '').slice(0, 600)
   d.innerHTML = `<summary style="display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);cursor:pointer;font-family:var(--font-mono);font-size:var(--text-xs)">
     <span class="mui-badge ${ok ? 'mui-badge--success' : 'mui-badge--danger'}">${ok ? 'ok' : 'err'}</span><span>${p.tool || 'tool'}</span>
-    <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis">${args}</span>
+    <span style="color:var(--text-muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${args}</span>
     <span class="mui-badge ${mut ? 'mui-badge--warning' : ''}" style="margin-inline-start:auto">${mut ? 'mutante' : 'llamada, no efecto'}</span></summary>
-    ${res ? `<div class="mui-terminal" style="margin:0 var(--space-3) var(--space-3)"><div class="mui-terminal__bar"><span class="dv-note">salida de la herramienta${p.resultChars ? ' · ' + p.resultChars + ' chars' : ''}</span></div><div class="mui-terminal__body"><p class="mui-terminal__line"><span class="mui-terminal__out">${md(res).replace(/<[^>]+>/g, '')}</span></p></div></div>` : ''}`
+    ${res ? `<div class="mui-terminal" style="margin:0 var(--space-3) var(--space-3)"><div class="mui-terminal__bar"><span class="dv-note">salida de la herramienta${p.resultChars ? ' · ' + p.resultChars + ' chars' : ''}</span></div><div class="mui-terminal__body"><p class="mui-terminal__line"><span class="mui-terminal__out" style="white-space:pre-wrap;overflow-wrap:anywhere">${md(res).replace(/<[^>]+>/g, '')}</span></p></div></div>` : ''}`
   return d
 }
 function addAgentBubble () {
@@ -138,7 +138,7 @@ function appendReasoning (text) {
   const t = (text || '').toString().trim(); if (!t) return
   const host = $('#live-reasoning'); if (!host) return
   if (!host.dataset.kicked) { host.dataset.kicked = '1'; host.append(html(`<p class="mui-section__kicker" style="margin:0 0 var(--space-1)">${tr('agent.reasoning')}</p>`)) }
-  host.append(html(`<p class="dv-note" style="white-space:pre-wrap;line-height:1.5;margin:0 0 var(--space-2)">${clean(t)}</p>`))
+  host.append(html(`<p class="dv-note" style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;margin:0 0 var(--space-2)">${clean(t)}</p>`))
   const m = $('#live-meta'); if (m) m.textContent = tr('agent.reasoningLive')
   scroll()
 }

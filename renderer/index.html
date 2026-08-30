@@ -15,8 +15,9 @@
   .wf-box{border:1px solid var(--border-strong);border-radius:var(--radius-base);color:var(--text-muted);display:flex;align-items:center;justify-content:center}
   .msg-user{display:flex;justify-content:flex-end}
   .msg-user > div{max-width:60ch;padding:var(--space-3) var(--space-4);border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
-  .msg-agent{max-width:72ch}
-  .conv{flex:1;min-height:0;overflow:auto;padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-4)}
+  .msg-agent{max-width:72ch;min-width:0}
+  .msg-agent *{min-width:0}
+  .conv{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-4)}
   .statusbar{flex:none;display:flex;align-items:center;gap:var(--space-5);height:40px;padding:0 var(--space-4);border-top:1px solid var(--border-subtle);background:var(--surface);font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-muted)}
   /* ── the loader: the M germinating from its grains (milpa-design) ───────────────── */
   @keyframes milpa-germina {
