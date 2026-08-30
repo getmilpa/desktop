@@ -226,6 +226,12 @@ ipcMain.handle('milpa:skills', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'skill:list', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, skills: [] } }
 })
+ipcMain.handle('milpa:roles', async () => {
+  // The specialist agent roles this app declares, projected by `agent:role:list`. The renderer shows
+  // each role with the skills it preloads; the backend owns the roles, the renderer only projects.
+  const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'agent:role:list', '--json'])
+  try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, roles: [] } }
+})
 ipcMain.handle('milpa:enableCapability', async (_e, capability) => {
   const cap = String(capability || '').replace(/[^a-zA-Z0-9/_.-]/g, '')
   if (!cap) return { ok: false, error: 'bad capability' }

@@ -420,6 +420,26 @@ async function previewComponent (host, input) {
 }
 
 // ── Capacidades screen (what the app can do, and enabling more — a signed, app-changing act) ──────
+async function renderAgents () {
+  const scr = document.querySelector('[data-screen="agentes"]'); if (!scr || !bridge || !bridge.roles) return
+  scr.innerHTML = `<p class="mui-section__kicker">${tr('nav.agents')}</p><p class="dv-note">${tr('agents.reading')}</p>`
+  const r = await bridge.roles().catch(() => null)
+  if (!r || r.ok === false) { scr.innerHTML = `<p class="mui-section__kicker">${tr('nav.agents')}</p><p class="dv-note">${tr('agents.readError')}</p>`; return }
+  const roles = r.roles || []
+  const chips = (arr, cls) => (arr || []).map(x => `<span class="mui-badge ${cls}">${clean(String(x))}</span>`).join(' ')
+  const cards = roles.length
+    ? roles.map(a => {
+        const skills = (a.skills && a.skills.length) ? `<div class="mui-cluster mui-cluster--sm" style="margin-top:var(--space-2)"><span class="dv-note">${tr('agents.skills')}</span> ${chips(a.skills, 'mui-badge--success')}</div>` : ''
+        const denies = (a.deny && a.deny.length) ? `<div class="mui-cluster mui-cluster--sm" style="margin-top:var(--space-1)"><span class="dv-note">${tr('agents.denies')}</span> ${chips(a.deny, 'mui-badge--danger')}</div>` : ''
+        const produces = a.produces ? `<div class="mui-cluster mui-cluster--sm" style="margin-top:var(--space-1)"><span class="dv-note">${tr('agents.produces')}</span> <span class="mui-badge mui-badge--warning">${clean(String(a.produces))}</span></div>` : ''
+        return `<div class="mui-card mui-card--compact"><div class="mui-card__body">
+          <span style="font-family:var(--font-mono);font-size:var(--text-sm)">${clean(a.name)}</span>
+          ${skills}${denies}${produces}</div></div>`
+      }).join('')
+    : `<p class="dv-note">${tr('agents.none')}</p>`
+  scr.innerHTML = `<div class="mui-stack"><div><p class="mui-section__kicker" style="margin:0">${tr('nav.agents')}</p><p class="dv-note" style="margin:var(--space-1) 0 0">${tr('agents.intro')}</p></div>${cards}</div>`
+}
+
 async function renderSkills () {
   const scr = document.querySelector('[data-screen="skills"]'); if (!scr || !bridge || !bridge.skills) return
   scr.innerHTML = `<p class="mui-section__kicker">${tr('nav.skills')}</p><p class="dv-note">${tr('skills.reading')}</p>`
@@ -520,6 +540,7 @@ document.querySelectorAll('[data-nav]').forEach(n => n.addEventListener('click',
   if (v === 'capacidades') renderCapacidades()
   if (v === 'componentes') renderComponents()
   if (v === 'skills') renderSkills()
+  if (v === 'agentes') renderAgents()
 }))
 $('#theme-toggle').addEventListener('click', () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === 'light' ? 'dark' : 'light' })
 $('#send').addEventListener('click', send)

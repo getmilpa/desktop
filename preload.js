@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('milpa', {
   signOp: (op, args) => ipcRenderer.invoke('milpa:signOp', { op, args }),
   capabilities: () => ipcRenderer.invoke('milpa:capabilities'),
   skills: () => ipcRenderer.invoke('milpa:skills'),
+  roles: () => ipcRenderer.invoke('milpa:roles'),
   enableCapability: (capability) => ipcRenderer.invoke('milpa:enableCapability', capability),
   events: (session, since) => ipcRenderer.invoke('milpa:events', { session, since }),
   // whether a driving agent run is live in the container — the renderer flags an INTERRUPTED prior run with this
