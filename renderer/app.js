@@ -60,25 +60,61 @@ function addAgentBubble () {
 // ── the decision gate (from agent:show.question) ────────────────────────────────────────────────
 function renderGate (q) {
   if ($('#gate-card')) return
-  let op = q.operation || q.tool || '—', args = ''
-  try { const w = typeof q.why === 'string' ? JSON.parse(q.why) : (q.why || {}); if (w.operation) op = w.operation; if (w.arguments) args = Object.entries(w.arguments).map(([k, v]) => `${k}=${v}`).join(' ') } catch {}
+  let op = q.operation || q.tool || '—', args = '', parsedArgs = {}
+  try { const w = typeof q.why === 'string' ? JSON.parse(q.why) : (q.why || {}); if (w.operation) op = w.operation; if (w.arguments) { parsedArgs = w.arguments; args = Object.entries(w.arguments).map(([k, v]) => `${k}=${v}`).join(' ') } } catch {}
   const opts = Array.isArray(q.options) ? q.options : ['sí', 'no']
+  const yesD = opts.includes('sí') ? 'sí' : opts[0]
+  const denyD = opts.includes('no') ? 'no' : opts[opts.length - 1]
+  // A capabilities:enable is a SIGNABLE act, not a session permission — the doctrine keeps the two
+  // distinct (a signature names THIS call and is made with a key that lives outside the session, so no
+  // mode pre-approves it). So the gate must not offer a dead "authorize": it routes to the out-of-band
+  // signed enable (creating a key first if there is none), then answers the gate so the turn resumes.
+  const isEnable = op === 'capabilities:enable'
+  const cap = isEnable ? String(parsedArgs.capability || '').trim() : ''
   const c = el('div', { className: 'mui-card mui-card--raised', id: 'gate-card' }); c.style.cssText = 'border-color:var(--warning-border);background:var(--warning-bg);margin-top:var(--space-3)'
+  const decisions = (isEnable && cap)
+    ? `<button type="button" class="mui-btn mui-btn--primary mui-btn--sm" id="gate-sign">${tr('gate.signEnable', { cap })}</button>
+       <button type="button" class="mui-btn mui-btn--danger mui-btn--sm" data-d="${denyD}">${tr('gate.deny')}</button>`
+    : `<button type="button" class="mui-btn mui-btn--primary mui-btn--sm" data-d="${yesD}">${tr('gate.authorize')}</button>
+       <button type="button" class="mui-btn mui-btn--sm">${tr('gate.adjust')}</button>
+       <button type="button" class="mui-btn mui-btn--danger mui-btn--sm" data-d="${denyD}">${tr('gate.deny')}</button>`
   c.innerHTML = `<div class="mui-card__body mui-gate">
     <div class="mui-gate__request"><p class="mui-gate__actor" style="margin:0">${tr('gate.stopped')}</p>
     <p class="mui-gate__action" style="margin:var(--space-1) 0">${clean(md(q.question || tr('gate.authRequired')))}</p>
     <p class="mui-gate__facts" style="margin:0">${tr('gate.operation')} <strong>${op}</strong>${args ? ' · ' + args : ''} · ${tr('gate.reason')}: <strong>${q.reason || '—'}</strong> · ${tr('gate.authority')} · ${tr('gate.signature')}: <strong>${tr('gate.notPresented')}</strong></p></div>
-    <div class="mui-gate__decisions">
-      <button type="button" class="mui-btn mui-btn--primary mui-btn--sm" data-d="${opts.includes('sí') ? 'sí' : opts[0]}">${tr('gate.authorize')}</button>
-      <button type="button" class="mui-btn mui-btn--sm">${tr('gate.adjust')}</button>
-      <button type="button" class="mui-btn mui-btn--danger mui-btn--sm" data-d="${opts.includes('no') ? 'no' : opts[opts.length - 1]}">${tr('gate.deny')}</button></div>
-    <p class="dv-note" style="margin:0">${tr('gate.note')}</p></div>`
+    <div class="mui-gate__decisions">${decisions}</div>
+    <p class="dv-note" id="gate-status" style="margin:var(--space-1) 0 0" aria-live="polite"></p>
+    <p class="dv-note" style="margin:0">${isEnable && cap ? tr('gate.signHint') : tr('gate.note')}</p></div>`
   c.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', async () => {
     c.querySelectorAll('button').forEach(x => x.disabled = true)
     await bridge.answer(current, b.dataset.d)
     c.querySelector('.mui-gate__decisions').innerHTML = `<span class="mui-badge mui-badge--success">${tr('gate.answered', { answer: b.dataset.d })}</span>`
     refreshShow()
   }))
+  const signBtn = c.querySelector('#gate-sign')
+  if (signBtn) signBtn.addEventListener('click', async () => {
+    const status = c.querySelector('#gate-status')
+    const say = (m) => { if (status) status.textContent = m }
+    const reenable = () => c.querySelectorAll('button').forEach(x => { x.disabled = false })
+    c.querySelectorAll('button').forEach(x => x.disabled = true)
+    // 1 · ensure a signing key — the software path mints one on the spot (a YubiKey/card already IS the key)
+    let k = await bridge.keys().catch(() => null)
+    if (!k || k.custody === 'none') {
+      say(tr('gate.creatingKey'))
+      const kg = await bridge.keygen().catch(e => ({ ok: false, error: String(e) }))
+      if (!kg || kg.ok === false) { say(tr('gate.enableFailed', { error: (kg && kg.error) || 'keygen' })); reenable(); return }
+    }
+    // 2 · the signed, out-of-band enable — `capabilities:enable --sign`, which names the call and signs it
+    say(tr('gate.signing'))
+    const r = await bridge.enableCapability(cap).catch(e => ({ ok: false, error: String(e) }))
+    if (!r || r.ok === false) { say(tr('gate.enableFailed', { error: (r && (r.error || r.raw)) || '—' })); reenable(); return }
+    const list = Array.isArray(r.unlocked) ? r.unlocked.join(', ') : (r.unlocked || r.unlocks || '')
+    const done = tr('gate.enabled', { cap }) + (list ? tr('gate.unlocks', { list }) : '')
+    // 3 · resume — the capability is installed; answering the pending question lets the agent continue with it
+    await bridge.answer(current, yesD)
+    c.querySelector('.mui-gate__decisions').innerHTML = `<span class="mui-badge mui-badge--success">${done}</span>`
+    refreshShow()
+  })
   $('#conv').append(c); scroll()
 }
 
