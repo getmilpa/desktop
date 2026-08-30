@@ -7,6 +7,13 @@
 // The board's data is a session's private facts and is scope-protected (greenhouse evidence/0366-0370): the
 // desktop host authenticates on the user's behalf. Model defaults to the local qwen (CLAUDE.md), overridable.
 const { app, BrowserWindow, session, ipcMain } = require('electron')
+
+// Native Wayland when the session is Wayland — XWayland's compositing can leave stale repaints (the
+// conversation bleeding over the header/inspector). `ozone-platform-hint=auto` picks Wayland when it
+// is there, which repaints cleanly; on X11 it is a no-op.
+if (process.env.XDG_SESSION_TYPE === 'wayland' || process.env.WAYLAND_DISPLAY) {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
+}
 const { execFile, execFileSync } = require('node:child_process')
 const path = require('node:path')
 const os = require('node:os')

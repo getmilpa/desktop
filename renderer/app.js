@@ -5,7 +5,7 @@ const $ = (s, r = document) => r.querySelector(s)
 const el = (t, p = {}) => Object.assign(document.createElement(t), p)
 const bridge = window.milpa
 const tr = (k, v) => (window.milpaI18n ? window.milpaI18n.t(k, v) : k)   // i18n — English default, Spanish optional (decisions/0138)
-let current = 'default'
+let current = (() => { try { return localStorage.getItem('milpa.session') || 'default' } catch { return 'default' } })()
 let sending = false
 
 // ── minimal markdown (headings, bold, code, tables, lists) ──────────────────────────────────────
@@ -601,7 +601,11 @@ document.querySelectorAll('[data-nav]').forEach(n => n.addEventListener('click',
 $('#theme-toggle').addEventListener('click', () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === 'light' ? 'dark' : 'light' })
 $('#send').addEventListener('click', send)
 $('#query').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() })
-$('#new-session')?.addEventListener('click', () => location.reload())
+$('#new-session')?.addEventListener('click', () => {
+  // A fresh session id — the store creates it on the first drive. Reuses no context, no compaction.
+  try { localStorage.setItem('milpa.session', 'work-' + Date.now().toString(36)) } catch {}
+  location.reload()
+})
 $('#inspector-toggle')?.addEventListener('click', () => { $('#inspector').hidden = !$('#inspector').hidden })
 
 ;(async () => {
