@@ -437,7 +437,27 @@ async function renderAgents () {
           ${skills}${denies}${produces}</div></div>`
       }).join('')
     : `<p class="dv-note">${tr('agents.none')}</p>`
-  scr.innerHTML = `<div class="mui-stack"><div><p class="mui-section__kicker" style="margin:0">${tr('nav.agents')}</p><p class="dv-note" style="margin:var(--space-1) 0 0">${tr('agents.intro')}</p></div>${cards}</div>`
+  const form = `<details class="mui-card mui-card--compact" style="margin-bottom:var(--space-4)"><summary style="cursor:pointer;padding:var(--space-1) 0"><span class="mui-badge mui-badge--success">+</span> <span class="dv-note">${tr('agents.compose')}</span></summary>
+    <div class="mui-stack mui-stack--sm" style="margin-top:var(--space-3)">
+      <input class="mui-input mui-input--sm" id="ag-name" placeholder="${tr('agents.fName')}" style="font-family:var(--font-mono)">
+      <textarea class="mui-textarea" id="ag-prompt" placeholder="${tr('agents.fPrompt')}" rows="3"></textarea>
+      <input class="mui-input mui-input--sm" id="ag-skills" placeholder="${tr('agents.fSkills')}">
+      <input class="mui-input mui-input--sm" id="ag-deny" placeholder="${tr('agents.fDeny')}">
+      <input class="mui-input mui-input--sm" id="ag-produces" placeholder="${tr('agents.fProduces')}">
+      <div class="mui-cluster mui-cluster--sm" style="justify-content:space-between;align-items:center"><span class="dv-note" id="ag-msg"></span><button type="button" class="mui-btn mui-btn--primary mui-btn--sm" id="ag-declare">${tr('agents.declare')}</button></div>
+    </div></details>`
+  scr.innerHTML = `<div class="mui-stack"><div><p class="mui-section__kicker" style="margin:0">${tr('nav.agents')}</p><p class="dv-note" style="margin:var(--space-1) 0 0">${tr('agents.intro')}</p></div>${form}${cards}</div>`
+  const btn = document.getElementById('ag-declare')
+  if (btn) btn.addEventListener('click', async () => {
+    const val = (id) => (document.getElementById(id)?.value || '').trim()
+    const list = (id) => val(id).split(',').map(x => x.trim()).filter(Boolean)
+    const msg = document.getElementById('ag-msg')
+    const input = { name: val('ag-name'), prompt: val('ag-prompt'), skills: list('ag-skills'), deny: list('ag-deny'), produces: val('ag-produces') }
+    if (!input.name || !input.prompt) { if (msg) msg.textContent = tr('agents.needBrief'); return }
+    if (msg) msg.textContent = '…'
+    const r = await bridge.declareRole(input).catch(() => null)
+    if (r && r.ok) { renderAgents() } else if (msg) { msg.textContent = (r && r.error) || tr('agents.declareFail') }
+  })
 }
 
 async function renderSkills () {

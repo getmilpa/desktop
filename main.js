@@ -232,6 +232,18 @@ ipcMain.handle('milpa:roles', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'agent:role:list', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, roles: [] } }
 })
+ipcMain.handle('milpa:declareRole', async (_e, input) => {
+  // Compose a specialist agent through the governed operation `agent:role:declare`. The human runs it
+  // directly (the terminal is the honest, ungated channel); it writes .milpa/agents/<name>.md.
+  const i = input || {}
+  const csv = (a) => Array.isArray(a) ? a.join(',') : String(a || '')
+  const args = ['exec', NAME, 'php', 'bin/coa', 'agent:role:declare', `--name=${String(i.name || '')}`, `--prompt=${String(i.prompt || '')}`, '--json']
+  if (csv(i.skills)) args.push(`--skills=${csv(i.skills)}`)
+  if (csv(i.deny)) args.push(`--deny=${csv(i.deny)}`)
+  if (i.produces) args.push(`--produces=${String(i.produces)}`)
+  const { out } = await exec('docker', args)
+  try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, error: 'declare failed' } }
+})
 ipcMain.handle('milpa:enableCapability', async (_e, capability) => {
   const cap = String(capability || '').replace(/[^a-zA-Z0-9/_.-]/g, '')
   if (!cap) return { ok: false, error: 'bad capability' }
