@@ -220,6 +220,12 @@ ipcMain.handle('milpa:capabilities', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'capabilities', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false } }
 })
+ipcMain.handle('milpa:skills', async () => {
+  // The skills this app carries, projected by the governed read `skill:list`. The renderer shows
+  // them; it never reads the filesystem or decides invocation — the backend owns that (decisions/0172).
+  const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'skill:list', '--json'])
+  try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, skills: [] } }
+})
 ipcMain.handle('milpa:enableCapability', async (_e, capability) => {
   const cap = String(capability || '').replace(/[^a-zA-Z0-9/_.-]/g, '')
   if (!cap) return { ok: false, error: 'bad capability' }

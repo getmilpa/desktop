@@ -5,8 +5,13 @@
 ;(function () {
   const messages = {
     en: {
-      'nav.sessions': 'Sessions', 'nav.decisions': 'Decisions', 'nav.capabilities': 'Capabilities', 'nav.settings': 'Settings', 'nav.components': 'Components',
+      'nav.sessions': 'Sessions', 'nav.decisions': 'Decisions', 'nav.capabilities': 'Capabilities', 'nav.skills': 'Skills', 'nav.settings': 'Settings', 'nav.components': 'Components',
       'components.kicker': 'live components', 'components.intro': 'A Desktop screen authored the Milpa way — a live web component (metric cards, data table, signed <milpa-state>) rendered by the framework, hosted here.', 'components.loading': 'Rendering the component…', 'components.error': 'The component surface is not wired to this container yet.', 'components.which': 'Screen', 'components.preview': 'Preview',
+      'skills.reading': 'Reading the skills…',
+      'skills.readError': 'Could not read the skills — does this image carry skill:list? Rebuild the dev image with the current app-runtime.',
+      'skills.none': 'No skills yet. Drop SKILL.md folders under skills/ — the house skills come by default.',
+      'skills.intro': 'The guidance this agent works by — non-deterministic skills it reaches for by judgment, not tools it runs. Read-only projection of skill:list.',
+      'skills.both': 'agent + you', 'skills.agentOnly': 'agent only', 'skills.humanOnly': 'you only',
       'nav.sessionsSection': 'sessions · goal and state',
       'tab.conversation': 'Conversation', 'tab.work': 'Work', 'tab.activity': 'Activity', 'tab.context': 'Context',
       'live.connecting': 'Connecting to the runtime…', 'live.booting': 'Bringing the backend up…', 'live.live': 'Live',
@@ -130,8 +135,13 @@
       'activity.log': 'session log · append-only stream · {n} facts',
     },
     es: {
-      'nav.sessions': 'Sesiones', 'nav.decisions': 'Decisiones', 'nav.capabilities': 'Capacidades', 'nav.settings': 'Ajustes', 'nav.components': 'Componentes',
+      'nav.sessions': 'Sesiones', 'nav.decisions': 'Decisiones', 'nav.capabilities': 'Capacidades', 'nav.skills': 'Skills', 'nav.settings': 'Ajustes', 'nav.components': 'Componentes',
       'components.kicker': 'componentes vivos', 'components.intro': 'Una pantalla del Desktop al estilo Milpa — un componente web vivo (metric cards, data table, <milpa-state> firmado) renderizado por el framework, hospedado aquí.', 'components.loading': 'Renderizando el componente…', 'components.error': 'La superficie de componentes aún no está cableada a este contenedor.', 'components.which': 'Pantalla', 'components.preview': 'Vista previa',
+      'skills.reading': 'Leyendo los skills…',
+      'skills.readError': 'No se pudieron leer los skills — ¿esta imagen trae skill:list? Reconstruye la imagen dev con el app-runtime actual.',
+      'skills.none': 'Sin skills todavía. Agrega carpetas SKILL.md en skills/ — los de la casa vienen por default.',
+      'skills.intro': 'La guía con la que trabaja este agente — skills no deterministas que alcanza por criterio, no herramientas que ejecuta. Proyección de sólo lectura de skill:list.',
+      'skills.both': 'agente + tú', 'skills.agentOnly': 'sólo agente', 'skills.humanOnly': 'sólo tú',
       'nav.sessionsSection': 'sesiones · objetivo y estado',
       'tab.conversation': 'Conversación', 'tab.work': 'Trabajo', 'tab.activity': 'Actividad', 'tab.context': 'Contexto',
       'live.connecting': 'Conectando al runtime…', 'live.booting': 'Levantando backend…', 'live.live': 'En vivo',

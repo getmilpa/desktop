@@ -420,6 +420,26 @@ async function previewComponent (host, input) {
 }
 
 // ── Capacidades screen (what the app can do, and enabling more — a signed, app-changing act) ──────
+async function renderSkills () {
+  const scr = document.querySelector('[data-screen="skills"]'); if (!scr || !bridge || !bridge.skills) return
+  scr.innerHTML = `<p class="mui-section__kicker">${tr('nav.skills')}</p><p class="dv-note">${tr('skills.reading')}</p>`
+  const r = await bridge.skills().catch(() => null)
+  if (!r || r.ok === false) { scr.innerHTML = `<p class="mui-section__kicker">${tr('nav.skills')}</p><p class="dv-note">${tr('skills.readError')}</p>`; return }
+  const skills = r.skills || []
+  const cards = skills.length
+    ? skills.map(s => {
+        const who = s.modelInvocable && s.userInvocable ? tr('skills.both') : (s.modelInvocable ? tr('skills.agentOnly') : tr('skills.humanOnly'))
+        const cls = s.modelInvocable ? 'mui-badge--success' : 'mui-badge--warning'
+        return `<div class="mui-card mui-card--compact"><div class="mui-card__body">
+          <div class="mui-cluster mui-cluster--sm" style="justify-content:space-between;align-items:center">
+            <span style="font-family:var(--font-mono);font-size:var(--text-sm)">${clean(s.name)}</span>
+            <span class="mui-badge ${cls}">${who}</span></div>
+          <p class="dv-note" style="margin-top:var(--space-2)">${clean(String(s.description).slice(0, 260))}</p></div></div>`
+      }).join('')
+    : `<p class="dv-note">${tr('skills.none')}</p>`
+  scr.innerHTML = `<div class="mui-stack"><div><p class="mui-section__kicker" style="margin:0">${tr('nav.skills')}</p><p class="dv-note" style="margin:var(--space-1) 0 0">${tr('skills.intro')}</p></div>${cards}</div>`
+}
+
 async function renderCapacidades () {
   const scr = document.querySelector('[data-screen="capacidades"]'); if (!scr || !bridge || !bridge.capabilities) return
   scr.innerHTML = `<p class="mui-section__kicker">${tr('nav.capabilities')}</p><p class="dv-note">${tr('capabilities.reading')}</p>`
@@ -491,6 +511,7 @@ document.querySelectorAll('[data-nav]').forEach(n => n.addEventListener('click',
   if (v === 'decisiones' && lastShow) renderDecisiones(lastShow)
   if (v === 'capacidades') renderCapacidades()
   if (v === 'componentes') renderComponents()
+  if (v === 'skills') renderSkills()
 }))
 $('#theme-toggle').addEventListener('click', () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === 'light' ? 'dark' : 'light' })
 $('#send').addEventListener('click', send)
