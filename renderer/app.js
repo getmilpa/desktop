@@ -478,9 +478,17 @@ async function renderCapacidades () {
 async function renderActivity () {
   const p = $('[data-panel="actividad"]'); if (!p || !bridge) return
   const { events } = await bridge.events(current, 0)
-  const label = { 'session.started': tr('activity.started'), 'session.turn': tr('activity.turn'), 'session.model_called': tr('activity.modelCall'), 'session.tool_called': tr('activity.toolCall'), 'session.system_set': tr('activity.system'), 'session.question_asked': tr('activity.question') }
-  p.innerHTML = `<p class="mui-section__kicker" style="margin:0 0 var(--space-3)">${tr('activity.log', { n: events.length })}</p>
-    <div class="mui-stack mui-stack--sm">${events.slice(-60).map(e => `<div class="mui-cluster mui-cluster--sm" style="justify-content:space-between;border-bottom:1px solid var(--border-subtle);padding-block:var(--space-1)"><span class="dv-note">${label[e.type] || e.type}</span><span class="dv-note" style="color:var(--text-secondary)">${(e.payload.tool || e.payload.model || e.payload.role || '').toString().slice(0, 40)}</span></div>`).join('')}</div>`
+  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const label = { 'session.started': tr('activity.started'), 'session.turn': tr('activity.turn'), 'session.model_called': tr('activity.modelCall'), 'session.model_returned': tr('activity.modelReturned'), 'session.tool_called': tr('activity.toolCall'), 'session.system_set': tr('activity.system'), 'session.question_asked': tr('activity.question') }
+  const rows = events.slice(-80).map(e => {
+    // The system prompt is a first-class audit row: the EXACT text the agent received — skills included.
+    if (e.type === 'session.system_set' && e.payload.system) {
+      return `<details class="mui-card mui-card--compact" style="margin-block:var(--space-1)"><summary style="cursor:pointer;padding:var(--space-1) 0"><span class="mui-badge mui-badge--success">${tr('activity.system')}</span> <span class="dv-note">${tr('activity.systemHint')}</span></summary><pre style="white-space:pre-wrap;font-size:var(--text-xs);font-family:var(--font-mono);margin:var(--space-2) 0 0;max-height:440px;overflow:auto;color:var(--text-secondary)">${esc(e.payload.system)}</pre></details>`
+    }
+    const detail = (e.payload.tool || e.payload.model || e.payload.role || '').toString().slice(0, 40)
+    return `<div class="mui-cluster mui-cluster--sm" style="justify-content:space-between;border-bottom:1px solid var(--border-subtle);padding-block:var(--space-1)"><span class="dv-note">${label[e.type] || e.type}</span><span class="dv-note" style="color:var(--text-secondary)">${esc(detail)}</span></div>`
+  }).join('')
+  p.innerHTML = `<p class="mui-section__kicker" style="margin:0 0 var(--space-3)">${tr('activity.log', { n: events.length })}</p><div class="mui-stack mui-stack--sm">${rows}</div>`
 }
 
 // ── sidebar sessions ────────────────────────────────────────────────────────────────────────────

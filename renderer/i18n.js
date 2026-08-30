@@ -53,6 +53,7 @@
       'autonomy.note': 'These values are not yet three behaviourally distinct levels.',
       'session.new': 'New session',
       'activity.empty': 'The session log appears here as soon as there are facts.',
+      'activity.systemHint': 'the exact prompt the agent received — click to read (skills included)', 'activity.modelReturned': 'model returned',
       'context.empty': 'Session context.',
       'inspector.title': 'Inspector',
       'inspector.empty': 'Open a session to see its plan, permissions and blockers.',
