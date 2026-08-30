@@ -6,7 +6,7 @@
 //   3. driving the agent             — run `coa agent <query>` in the container against the configured model.
 // The board's data is a session's private facts and is scope-protected (greenhouse evidence/0366-0370): the
 // desktop host authenticates on the user's behalf. Model defaults to the local qwen (CLAUDE.md), overridable.
-const { app, BrowserWindow, session, ipcMain } = require('electron')
+const { app, BrowserWindow, session, ipcMain, Menu } = require('electron')
 
 // Native Wayland when the session is Wayland — XWayland's compositing can leave stale repaints (the
 // conversation bleeding over the header/inspector). `ozone-platform-hint=auto` picks Wayland when it
@@ -266,6 +266,7 @@ ipcMain.handle('milpa:enableCapability', async (_e, capability) => {
 ipcMain.handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: !!token, base: BASE }))
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null)   // no native File/Edit/View menu — it means nothing for this app
   await startBackend()
   session.defaultSession.webRequest.onBeforeSendHeaders((details, cb) => {
     if (token && details.url.startsWith(BASE)) details.requestHeaders['Authorization'] = `Bearer ${token}`
@@ -277,6 +278,14 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   })
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  // The menu is gone, but keep the two shortcuts that matter: reload (Ctrl/Cmd+R) and devtools
+  // (Ctrl/Cmd+Shift+I). Copy/paste in inputs is handled by Chromium without a menu.
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown') return
+    const mod = input.control || input.meta
+    if (mod && !input.shift && input.key.toLowerCase() === 'r') win.webContents.reload()
+    else if (mod && input.shift && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools()
+  })
 
   if (process.env.MILPA_CAPTURE) {
     win.webContents.on('did-finish-load', async () => {
