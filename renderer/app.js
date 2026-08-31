@@ -680,6 +680,103 @@ async function refreshSessions () {
   list.append(a)
 }
 
+// ── session audit export: split the stream into its components and weigh each one, so a human can
+// SEE where the token budget goes and debug it with the house ────────────────────────────────────
+function estTok (s) { return Math.round((typeof s === 'string' ? s : JSON.stringify(s || '')).length / 4) }
+function findInPayload (o, keys) {
+  if (o && typeof o === 'object') {
+    for (const k of Object.keys(o)) {
+      if (keys.includes(k)) return o[k]
+      const r = findInPayload(o[k], keys); if (r !== undefined && r !== null) return r
+    }
+  }
+  return null
+}
+function kfmt (n) { return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n) }
+
+async function exportSession () {
+  const btn = $('#export-btn'); const label0 = btn ? btn.textContent : ''
+  if (btn) { btn.disabled = true; btn.textContent = 'Exportando…' }
+  try {
+    const [evres, show] = await Promise.all([bridge.events(current, 0), bridge.show(current)])
+    const events = (evres && evres.events) || []
+    if (!events.length) { if (btn) { btn.textContent = 'sin eventos'; setTimeout(() => { btn.textContent = label0; btn.disabled = false }, 1500) } return }
+
+    // Real provider usage (session.model_returned), and estimated weight per component (~4 chars/tok).
+    let spent = 0, lastPrompt = 0, cached = 0, calls = 0
+    const comp = { user: [0, 0], assistant: [0, 0], reasoning: [0, 0], toolResult: [0, 0], toolCall: [0, 0], summary: [0, 0], system: [0, 0] }
+    let heaviestResult = { t: 0, tool: '' }
+    let heaviestCall = null, heaviestCallLen = 0
+    const line = []
+
+    for (const e of events) {
+      const p = e.payload || {}
+      if (e.type === 'session.turn' && p.role === 'user') { const t = estTok(p.content); comp.user[0]++; comp.user[1] += t; line.push({ k: 'user', t, body: String(p.content || '') }) } else if (e.type === 'session.turn' && p.role === 'assistant') { const t = estTok(p.content); comp.assistant[0]++; comp.assistant[1] += t; line.push({ k: 'assistant', t, body: String(p.content || '') }) } else if (e.type === 'session.model_reasoned') { const t = estTok(p.reasoning); comp.reasoning[0]++; comp.reasoning[1] += t; line.push({ k: 'reasoning', t, body: String(p.reasoning || '') }) } else if (e.type === 'session.tool_called') {
+        const rt = estTok(p.result); const at = estTok((p.tool || '') + ' ' + JSON.stringify(p.args || p.arguments || {}))
+        comp.toolResult[0]++; comp.toolResult[1] += rt; comp.toolCall[0]++; comp.toolCall[1] += at
+        if (rt > heaviestResult.t) heaviestResult = { t: rt, tool: p.tool || '?' }
+        line.push({ k: 'tool', t: rt, tool: p.tool || '?', args: p.args || p.arguments || {}, body: String(p.result || '') })
+      } else if (e.type === 'session.compacted') { const t = estTok(p.summary); comp.summary = [1, t]; line.push({ k: 'summary', t, through: p.through, body: String(p.summary || '') }) } else if (e.type === 'session.model_returned') { const u = (p.usage && typeof p.usage === 'object') ? p.usage : p; spent += (u.total_tokens || 0); if (u.prompt_tokens) lastPrompt = u.prompt_tokens; cached += (u.cached_tokens || 0); calls++ } else if (e.type === 'session.model_called') { const len = JSON.stringify(p).length; if (len > heaviestCallLen) { heaviestCallLen = len; heaviestCall = p } }
+    }
+
+    // The heaviest single request: what ONE call actually sent, broken down.
+    let heavy = null
+    if (heaviestCall) {
+      const sys = findInPayload(heaviestCall, ['system'])
+      const tools = findInPayload(heaviestCall, ['tools'])
+      const msgs = findInPayload(heaviestCall, ['messages', 'mensajes']) || []
+      if (sys) comp.system = [1, estTok(sys)]
+      const byRole = {}
+      for (const m of (Array.isArray(msgs) ? msgs : [])) { if (!m || typeof m !== 'object') continue; const r = m.role || '?'; byRole[r] = (byRole[r] || 0) + estTok(m.content) }
+      heavy = { total: estTok(heaviestCall), system: estTok(sys || ''), tools: estTok(tools || ''), toolsN: Array.isArray(tools) ? tools.length : 0, msgs: byRole }
+    }
+
+    // ── compose the markdown ──
+    const rows = [
+      ['resultados de tool', comp.toolResult, heaviestResult.t ? `el más pesado: ${heaviestResult.tool} ~${kfmt(heaviestResult.t)}` : ''],
+      ['razonamiento (thinking)', comp.reasoning, 'lo que el modelo piensa por turno'],
+      ['resumen de sesión', comp.summary, 'la compactación (se re-manda cada llamada)'],
+      ['system prompt', comp.system, 'se manda cada llamada'],
+      ['turnos asistente', comp.assistant, ''],
+      ['llamadas a tool (args)', comp.toolCall, ''],
+      ['turnos usuario', comp.user, '']
+    ].sort((a, b) => b[1][1] - a[1][1])
+
+    let md = `# Auditoría de sesión — ${current}\n\n`
+    md += `Modelo: **${(show && show.model) || 'qwen'}** · Turnos: **${(show && show.turns) ?? '?'}** · Compactado hasta seq: **${(show && show.compactedThrough) ?? 'no'}** · Eventos: **${events.length}**\n\n`
+    md += `## 1. Presupuesto REAL (del proveedor · session.model_returned)\n\n`
+    md += `- **Total gastado:** ${kfmt(spent)} tokens (suma de \`total_tokens\` de ${calls} llamadas)\n`
+    md += `- **Última ventana (prompt):** ${kfmt(lastPrompt)} tokens${cached ? ` · cacheado: ${kfmt(cached)}` : ''}\n\n`
+    md += `## 2. Dónde se van los tokens — estimado por componente (~4 chars/token)\n\n`
+    md += `Esto es lo que RECURRE en la ventana cada llamada. Ordenado por peso:\n\n`
+    md += `| componente | ~tokens | # | nota |\n|---|---:|---:|---|\n`
+    for (const [name, [n, t], note] of rows) md += `| ${name} | **${kfmt(t)}** | ${n} | ${note} |\n`
+    md += `\n`
+    if (heavy) {
+      md += `## 3. La llamada MÁS PESADA — qué mandó UNA sola llamada (~${kfmt(heavy.total)} tok)\n\n`
+      md += `- system: ~${kfmt(heavy.system)} · tools: ~${kfmt(heavy.tools)} (${heavy.toolsN} tools)\n`
+      md += `- mensajes por rol: ${Object.entries(heavy.msgs).map(([r, t]) => `${r} ~${kfmt(t)}`).join(' · ')}\n\n`
+      md += `> Si un rol (típicamente \`tool\`) domina, ahí está la fuga: un resultado gordo re-enviado cada llamada.\n\n`
+    }
+    md += `## 4. Timeline auditable (cada componente, separado, con su peso)\n\n`
+    const icon = { user: '👤 USUARIO', assistant: '🤖 ASISTENTE', reasoning: '🧠 THINKING', tool: '🔧 TOOL', summary: '📦 RESUMEN (compactación)' }
+    for (const it of line) {
+      if (it.k === 'tool') {
+        md += `### 🔧 ${it.tool} → resultado · ~${kfmt(it.t)} tok\n`
+        md += `**args:** \`${JSON.stringify(it.args).slice(0, 400)}\`\n\n\`\`\`\n${it.body}\n\`\`\`\n\n`
+      } else {
+        md += `### ${icon[it.k] || it.k}${it.through != null ? ' · hasta seq ' + it.through : ''} · ~${kfmt(it.t)} tok\n\n`
+        md += (it.k === 'reasoning' || it.k === 'summary') ? `${it.body}\n\n` : `> ${String(it.body).replace(/\n/g, '\n> ')}\n\n`
+      }
+    }
+
+    const res = await bridge.saveExport(`milpa-${current}`, md)
+    if (btn) { btn.textContent = (res && res.ok) ? '✓ guardado' : (res && res.canceled ? label0 : 'error'); btn.disabled = false; if (res && res.ok) setTimeout(() => { btn.textContent = label0 }, 2000) }
+  } catch (e) {
+    if (btn) { btn.textContent = 'error'; btn.disabled = false; setTimeout(() => { btn.textContent = label0 }, 2000) }
+  }
+}
+
 // ── chrome ──────────────────────────────────────────────────────────────────────────────────────
 function setLive (state, label) {
   if (Date.now() < compactingUntil) return   // hold the "Compacting…" flash; the next poll restores this
@@ -723,6 +820,7 @@ $('#new-session')?.addEventListener('click', () => {
   location.reload()
 })
 $('#inspector-toggle')?.addEventListener('click', () => { $('#inspector').hidden = !$('#inspector').hidden })
+$('#export-btn')?.addEventListener('click', exportSession)
 
 ;(async () => {
   setLive('connecting', tr('live.connecting'))

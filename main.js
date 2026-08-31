@@ -6,7 +6,7 @@
 //   3. driving the agent             — run `coa agent <query>` in the container against the configured model.
 // The board's data is a session's private facts and is scope-protected (greenhouse evidence/0366-0370): the
 // desktop host authenticates on the user's behalf. Model defaults to the local qwen (CLAUDE.md), overridable.
-const { app, BrowserWindow, session, ipcMain, Menu } = require('electron')
+const { app, BrowserWindow, session, ipcMain, Menu, dialog } = require('electron')
 
 // Native Wayland when the session is Wayland — XWayland's compositing can leave stale repaints (the
 // conversation bleeding over the header/inspector). `ozone-platform-hint=auto` picks Wayland when it
@@ -178,6 +178,25 @@ ipcMain.handle('milpa:owner', async (_e, sid) => {
 })
 // The session stream — model_called / tool_called / turn — read live so the UI streams the agent's work
 // while `coa agent` is still running. php -S can't hold a long SSE connection, so the renderer polls this.
+// Save an audit export the renderer composed. The renderer owns the FORMAT (categorising the stream,
+// weighing each component); the main process only owns the file — a Save dialog, then a write. The
+// content never leaves the host.
+ipcMain.handle('milpa:saveExport', async (_e, { name, content } = {}) => {
+  try {
+    const safe = String(name || 'milpa-session').replace(/[^\w.-]/g, '_')
+    const res = await dialog.showSaveDialog({
+      title: 'Export session audit',
+      defaultPath: path.join(os.homedir(), safe + '.md'),
+      filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'Text', extensions: ['txt'] }],
+    })
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true }
+    fs.writeFileSync(res.filePath, String(content || ''), 'utf8')
+    return { ok: true, path: res.filePath }
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) }
+  }
+})
+
 ipcMain.handle('milpa:events', async (_e, { session: sid, since }) => {
   const stream = 'agent-session:' + (sid || 'default')
   const { out } = await exec('docker', ['exec', NAME, 'sh', '-c',

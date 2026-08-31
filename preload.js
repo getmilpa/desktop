@@ -30,4 +30,6 @@ contextBridge.exposeInMainWorld('milpa', {
   // the container (the renderer is file://, so it cannot fetch the backend directly).
   live: (endpoint, body) => ipcRenderer.invoke('milpa:live', { endpoint, body }),
   status: () => ipcRenderer.invoke('milpa:status'),
+  // Save an audit export of the session to a file the human picks (a Save dialog in the main process).
+  saveExport: (name, content) => ipcRenderer.invoke('milpa:saveExport', { name, content }),
 })
