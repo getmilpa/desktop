@@ -297,6 +297,9 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   })
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  // Open maximized — a workspace, not a small dialog. The 1440×900 size above is the RESTORED size
+  // (what you get when you un-maximize), so it still behaves on small screens.
+  win.maximize()
   // The menu is gone, but keep the two shortcuts that matter: reload (Ctrl/Cmd+R) and devtools
   // (Ctrl/Cmd+Shift+I). Copy/paste in inputs is handled by Chromium without a menu.
   win.webContents.on('before-input-event', (e, input) => {
