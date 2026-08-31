@@ -279,7 +279,7 @@ async function refreshShow () {
   if (!bridge) return
   const show = await bridge.show(current); lastShow = show
   if (!show || show.ok === false) return
-  if (show.goal) { $('#goal').textContent = show.goal; $('#goal-sub').textContent = tr('inspector.sessionMode', { session: current, mode: show.mode || 'ask' }) }
+  if (show.goal) { const g = $('#goal'); g.textContent = show.goal; g.title = show.goal; $('#goal-sub').textContent = tr('inspector.sessionMode', { session: current, mode: show.mode || 'ask' }) }
   renderInspector(show); renderWork(show); renderContext(show); renderDecisiones(show)
   checkInterrupted(show)
   const pend = !!show.question
