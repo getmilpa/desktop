@@ -14,6 +14,12 @@ const { app, BrowserWindow, session, ipcMain, Menu } = require('electron')
 if (process.env.XDG_SESSION_TYPE === 'wayland' || process.env.WAYLAND_DISPLAY) {
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
 }
+// The ozone hint alone did NOT stop the stale repaints on this setup (the conversation ghosting over
+// the header/inspector on scroll and re-hydration). Disable GPU COMPOSITING so layers composite in
+// software — no stale GPU-composited tiles to leave behind. GPU rasterization stays; only the tile
+// compositor changes, and for a text board the cost is nil. This is the reliable fix across X11,
+// XWayland and native Wayland, so it is unconditional.
+app.commandLine.appendSwitch('disable-gpu-compositing')
 const { execFile, execFileSync } = require('node:child_process')
 const path = require('node:path')
 const os = require('node:os')
