@@ -273,6 +273,8 @@ async function paintHistory () {
 let lastShow = null
 let ownerVerified = false      // last verified-owner projection; gates the identity nudge
 let interruptShown = false
+let lastCompacted = -1         // last compactedThrough seen — a rise means the house just compacted
+let compactingUntil = 0        // while set in the future, the live indicator holds "Compacting…"
 async function refreshShow () {
   if (!bridge) return
   const show = await bridge.show(current); lastShow = show
@@ -288,6 +290,12 @@ async function refreshShow () {
   if (nd) { nd.hidden = !pend; nd.textContent = '1' }
   const t = show.turns ?? '', cc = (show.callCount ?? show.toolCalls ?? '')
   $('#st-counts').textContent = `${t ? t + ' turnos' : ''}${show.compactedThrough ? ' · compactado ' + show.compactedThrough : ''}`
+  // The house compacts the window (locally, from the session facts) — tell the human when it does,
+  // so a shrinking window is a visible act, not a silent one. A rise in compactedThrough since the
+  // last poll is a fresh compaction.
+  const ct = show.compactedThrough || 0
+  if (lastCompacted >= 0 && ct > lastCompacted) flashCompacting()
+  lastCompacted = ct
   refreshOwner()
   refreshTokens()
 }
@@ -493,7 +501,10 @@ function renderDecisiones (show) {
     acts.querySelectorAll('button').forEach(x => x.disabled = true)
     await bridge.answer(current, b.dataset.dd)
     acts.innerHTML = `<span class="mui-badge mui-badge--success">${tr('gate.answered', { answer: b.dataset.dd })}</span>`
-    refreshShow()
+    // Authorizing IS the intent to continue — one step, not two (Rod's principle: never re-specify
+    // what the system can infer). Same as the conversation gate: a "yes" resumes the work; a "no"
+    // only records the answer. So a human who authorized never has to also press «Continue».
+    if (b.dataset.dd === 'sí') { await refreshShow(); send('continúa') } else { refreshShow() }
   }))
 }
 
@@ -671,9 +682,18 @@ async function refreshSessions () {
 
 // ── chrome ──────────────────────────────────────────────────────────────────────────────────────
 function setLive (state, label) {
+  if (Date.now() < compactingUntil) return   // hold the "Compacting…" flash; the next poll restores this
   const dot = { working: '◍', wait: '◉', idle: '◉', err: '◉', connecting: '◌' }[state] || '◌'
   const color = { wait: 'var(--warning)', err: 'var(--danger)', idle: 'var(--success)', working: 'var(--accent)' }[state] || 'var(--text-muted)'
   const s = $('#st-live'); s.textContent = `${dot} ${label}`; s.style.color = color
+}
+
+// A fresh compaction just landed — flash the live indicator so the human sees the window was
+// shrunk. Compaction is local and instant (it reads the session facts, no model call), so this is
+// a brief acknowledgement, not a progress bar: it holds ~2.5s, then the next poll restores the state.
+function flashCompacting () {
+  compactingUntil = Date.now() + 2500
+  const s = $('#st-live'); if (s) { s.textContent = `◍ ${tr('live.compacting')}`; s.style.color = 'var(--accent)' }
 }
 document.querySelectorAll('[data-tab]').forEach(t => t.addEventListener('click', () => {
   document.querySelectorAll('[data-tab]').forEach(x => x.setAttribute('aria-selected', String(x === t)))
