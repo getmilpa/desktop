@@ -42,7 +42,9 @@ function addUser (text, at) {
 function toolCard (p) {
   const ok = p.ok !== false; const mut = p.awaitingConfirmation != null || /write|make|found|set|enable|disable|register/.test(p.tool || '')
   const d = el('details', { className: 'mui-card mui-card--compact' }); d.style.margin = 'var(--space-2) 0'
-  const args = p.arguments && Object.keys(p.arguments).length ? Object.entries(p.arguments).map(([k, v]) => `${k}=${String(v).slice(0, 24)}`).join(' ') : ''
+  // fmtArgVal (not String(v)): an array/object arg like `edits:[{find,replace}]` becomes readable
+  // JSON instead of «[object Object]». The summary line clips with ellipsis, so length is bounded.
+  const args = p.arguments && Object.keys(p.arguments).length ? Object.entries(p.arguments).map(([k, v]) => `${k}=${fmtArgVal(v)}`).join(' ') : ''
   const res = fmtResult(p.result).slice(0, 800)
   d.innerHTML = `<summary style="display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);cursor:pointer;font-family:var(--font-mono);font-size:var(--text-xs)">
     <span class="mui-badge ${ok ? 'mui-badge--success' : 'mui-badge--danger'}">${ok ? 'ok' : 'err'}</span><span>${p.tool || 'tool'}</span>
