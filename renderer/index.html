@@ -8,6 +8,9 @@
 <link rel="stylesheet" href="ds/tokens/milpa-tokens.css">
 <link rel="stylesheet" href="ds/_ds_bundle.css">
 <style>
+  /* The `hidden` attribute must win over inline `display` (e.g. #chat-screen's `display:flex`), or
+     switching to a data-screen leaves the chat painted underneath it — two views overlapping. */
+  [hidden]{display:none!important}
   html,body{height:100%;margin:0}
   body{background:var(--bg);color:var(--text);font-family:var(--font-body);overflow:hidden}
   .app{display:flex;flex-direction:column;height:100vh;--text-2xs:0.8rem;--text-xs:0.9rem;--text-sm:1.0625rem;--text-base:1.1875rem;--text-lg:1.375rem;--text-xl:1.625rem;--text-2xl:2rem;--text-3xl:2.5rem}
