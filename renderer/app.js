@@ -5,6 +5,21 @@ const $ = (s, r = document) => r.querySelector(s)
 const el = (t, p = {}) => Object.assign(document.createElement(t), p)
 const bridge = window.milpa
 const tr = (k, v) => (window.milpaI18n ? window.milpaI18n.t(k, v) : k)   // i18n — English default, Spanish optional (decisions/0138)
+
+// Authoritative mutation per tool, read ONCE from the op catalogue — each op's DECLARED effect
+// (`mutating`), not a guess from its name. A read op like artifact:contract was being mislabelled
+// «mutante» by a name regex; the house owns the effect, the card only projects what was declared.
+// Null until loaded; toolCard falls back to a conservative heuristic only for a tool not in the catalogue.
+let toolMutating = null
+async function loadCatalogue () {
+  if (!bridge || !bridge.catalogue) return
+  const c = await bridge.catalogue().catch(() => null)
+  const tools = c && Array.isArray(c.tools) ? c.tools : null
+  if (!tools) return
+  const map = {}
+  for (const t of tools) { if (t && t.name) map[t.name] = t.mutating === true }
+  toolMutating = map
+}
 let current = (() => { try { return localStorage.getItem('milpa.session') || 'default' } catch { return 'default' } })()
 let sending = false
 
@@ -40,7 +55,13 @@ function addUser (text, at) {
   w.append(b); $('#conv').append(w); scroll()
 }
 function toolCard (p) {
-  const ok = p.ok !== false; const mut = p.awaitingConfirmation != null || /write|make|found|set|enable|disable|register/.test(p.tool || '')
+  const ok = p.ok !== false
+  // Authoritative: the op's DECLARED `mutating`, read from the catalogue by tool name. Only when a
+  // tool is absent from the catalogue do we fall back to a name heuristic — and even then not on
+  // `awaitingConfirmation` (which is present-and-false for non-confirming mutations, and was flipping
+  // read ops to «mutante»), nor on «found» (which matched read ops like foundation:found).
+  const declared = toolMutating && p.tool != null ? toolMutating[p.tool] : undefined
+  const mut = declared !== undefined ? declared : /write|make|set|enable|disable|register/.test(p.tool || '')
   const d = el('details', { className: 'mui-card mui-card--compact' }); d.style.margin = 'var(--space-2) 0'
   // fmtArgVal (not String(v)): an array/object arg like `edits:[{find,replace}]` becomes readable
   // JSON instead of «[object Object]». The summary line clips with ellipsis, so length is bounded.
@@ -942,6 +963,7 @@ async function doOwn (prefix = '') {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  loadCatalogue()   // authoritative tool-mutation map for the tool cards
   $('#st-identity')?.addEventListener('click', openIdentity)
   $('#id-close')?.addEventListener('click', closeIdentity)
   $('#id-modal')?.addEventListener('click', (e) => { if (e.target && e.target.id === 'id-modal') closeIdentity() })

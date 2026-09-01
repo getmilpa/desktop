@@ -264,6 +264,15 @@ ipcMain.handle('milpa:roles', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'agent:role:list', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, roles: [] } }
 })
+ipcMain.handle('milpa:catalogue', async () => {
+  // The op catalogue an agent receives from this app, each tool carrying its DECLARED effect
+  // (mutating, requiresConfirmation, effects). The tool cards read the mutation from HERE — the
+  // authoritative declaration — instead of guessing it from the tool name (a read op like
+  // artifact:contract was being mislabelled «mutante»). The backend owns the effect; the renderer
+  // only projects what the operation declared.
+  const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'agent:catalogue', '--json'])
+  try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, tools: [] } }
+})
 ipcMain.handle('milpa:declareRole', async (_e, input) => {
   // Compose a specialist agent through the governed operation `agent:role:declare`. The human runs it
   // directly (the terminal is the honest, ungated channel); it writes .milpa/agents/<name>.md.

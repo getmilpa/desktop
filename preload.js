@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('milpa', {
   capabilities: () => ipcRenderer.invoke('milpa:capabilities'),
   skills: () => ipcRenderer.invoke('milpa:skills'),
   roles: () => ipcRenderer.invoke('milpa:roles'),
+  catalogue: () => ipcRenderer.invoke('milpa:catalogue'),
   declareRole: (input) => ipcRenderer.invoke('milpa:declareRole', input),
   enableCapability: (capability) => ipcRenderer.invoke('milpa:enableCapability', capability),
   events: (session, since) => ipcRenderer.invoke('milpa:events', { session, since }),
