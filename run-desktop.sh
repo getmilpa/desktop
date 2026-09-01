@@ -43,7 +43,10 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 
 # Clean any stale backend, then launch the shell detached (survives closing this terminal).
-docker rm -f milpa-desktop-backend >/dev/null 2>&1 || true
+# MILPA_KEEP_BACKEND=1 attaches to the running backend instead — the sessions inside survive a UI
+# restart. This line was the killer main.js's knob could not see: the launcher murdered the container
+# before Electron ever started (measured: a 48-turn session died with it).
+[ "${MILPA_KEEP_BACKEND:-}" = "1" ] || docker rm -f milpa-desktop-backend >/dev/null 2>&1 || true
 pkill -9 -f 'electron/dist/electron' >/dev/null 2>&1 || true
 sleep 1
 nohup "$ELECTRON" . >/tmp/milpa-desktop.log 2>&1 < /dev/null &
