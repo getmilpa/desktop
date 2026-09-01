@@ -217,6 +217,7 @@ async function send (forced) {
       if (e.type === 'session.tool_called') $('#live-tools')?.append(toolCard(e.payload))
       else if (e.type === 'session.model_called') { const m = $('#live-meta'); if (m) m.textContent = tr('agent.thinking', { model: e.payload.model || '' }) }
       else if (e.type === 'session.model_reasoned') appendReasoning(e.payload && e.payload.reasoning)
+      else if (e.type === 'session.debt_signaled') refreshDebt()
       else if (e.type === 'session.question_asked') { await onParked(); return }
     }
     seen += events.length; scroll()
@@ -321,6 +322,7 @@ async function refreshShow () {
   lastCompacted = ct
   refreshOwner()
   refreshTokens()
+  refreshDebt()
 }
 
 // ── interrupted run (greenhouse decisions/0132) ─────────────────────────────────────────────────
@@ -471,6 +473,35 @@ async function refreshTokens () {
         `<div style="height:8px;border-radius:999px;background:var(--surface-sunken,var(--border-subtle));overflow:hidden;margin-top:4px"><div style="height:100%;width:${pct}%;background:${hue};transition:width var(--dur-moderate,.3s) var(--ease-grano,ease)"></div></div>`
     }
   }
+}
+
+// ── DebtSignal panel (greenhouse decisions/0183, primitive #5) ───────────────────────────────────────────
+// The backend admits debt as it works — `session.debt_signaled` facts in the stream. The Inspector
+// projects them as counts per kind, most-frequent first, recounted from the events array on demand
+// (no state of its own). No signals → no panel: absence stays quiet. The counting is pure
+// (debt.js / window.milpaDebt) so it can be exercised headless against a synthetic stream.
+let debtBusy = false
+function debtKindLabel (kind) {
+  const key = 'debt.kind.' + kind
+  const label = tr(key)
+  return label === key ? String(kind).replace(/_/g, ' ') : label   // humanized snake_case fallback
+}
+function renderDebtPanel (counts) {
+  const box = $('#inspector-body'); if (!box) return
+  const old = box.querySelector('#debt-panel'); if (old) old.remove()
+  if (!counts.length) return                          // empty state: the panel stays hidden, never noise
+  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const rows = counts.map(c => `<div class="mui-cluster mui-cluster--sm"><span class="mui-badge mui-badge--warning">${c.count} ×</span><span class="dv-note">${esc(debtKindLabel(c.kind))}</span></div>`).join('')
+  box.append(html(`<div id="debt-panel"><p class="mui-section__kicker" style="margin:0 0 var(--space-2)">${tr('inspector.debt')}</p><div class="mui-stack mui-stack--sm">${rows}</div></div>`))
+}
+async function refreshDebt () {
+  if (!bridge || debtBusy || !window.milpaDebt) return
+  debtBusy = true
+  try {
+    const { events } = await bridge.events(current, 0)
+    renderDebtPanel(window.milpaDebt.countDebtSignals(events || []))
+  } catch { /* a read failure keeps the last projection */ }
+  debtBusy = false
 }
 
 // ── Decisiones screen (the session's gate, decisions and permissions — consent/gate/attribution) ─

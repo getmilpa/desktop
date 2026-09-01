@@ -152,6 +152,10 @@
       'capabilities.sourceLine': 'capabilities · source: {source}',
       'capabilities.intro': 'What this app can do today, and how it grows. Enabling changes what the app CAN do — it is signed.',
       'activity.log': 'session log · append-only stream · {n} facts',
+      'inspector.debt': 'debt observed this session',
+      'debt.kind.admitted_intent_skip': 'admitted intent skip',
+      'debt.kind.high_tier_double_ceremony': 'high-tier double ceremony',
+      'debt.kind.scope_fragility': 'scope fragility',
     },
     es: {
       'nav.sessions': 'Sesiones', 'nav.decisions': 'Decisiones', 'nav.capabilities': 'Capacidades', 'nav.skills': 'Skills', 'nav.agents': 'Agentes', 'nav.settings': 'Ajustes', 'nav.components': 'Componentes',
@@ -300,6 +304,10 @@
       'capabilities.sourceLine': 'capacidades · fuente: {source}',
       'capabilities.intro': 'Lo que esta app puede hacer hoy, y cómo crece. Habilitar cambia lo que la app PUEDE hacer — se firma.',
       'activity.log': 'registro de sesión · stream append-only · {n} hechos',
+      'inspector.debt': 'deuda observada en esta sesión',
+      'debt.kind.admitted_intent_skip': 'omisión de intención admitida',
+      'debt.kind.high_tier_double_ceremony': 'ceremonia doble en tier alto',
+      'debt.kind.scope_fragility': 'fragilidad del alcance',
     },
   }
 
