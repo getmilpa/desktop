@@ -6,7 +6,7 @@
 //   3. driving the agent             — run `coa agent <query>` in the container against the configured model.
 // The board's data is a session's private facts and is scope-protected (greenhouse evidence/0366-0370): the
 // desktop host authenticates on the user's behalf. Model defaults to the local qwen (CLAUDE.md), overridable.
-const { app, BrowserWindow, session, ipcMain, Menu, dialog } = require('electron')
+const { app, BrowserWindow, session, ipcMain, Menu, dialog, net } = require('electron')
 
 // Native Wayland when the session is Wayland — XWayland's compositing can leave stale repaints (the
 // conversation bleeding over the header/inspector). `ozone-platform-hint=auto` picks Wayland when it
@@ -92,7 +92,13 @@ const AGENT_HTTP_ONLY = !!process.env.MILPA_AGENT_HTTP_ONLY
 async function agentHttp (method, path, body) {
   const headers = Object.assign({ Accept: 'application/json' }, token ? { Authorization: `Bearer ${token}` } : {})
   if (body) headers['Content-Type'] = 'application/json'
-  const r = await fetch(`${BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  // Chromium's net.fetch, NOT Node's: undici's default headersTimeout (~5 min) aborted long agent
+  // drives mid-run — a 12-step qwen turn at a 27k window takes longer than that — and the abort both
+  // killed the in-container run at the next output and fell through to a SECOND exec drive on the
+  // same session. Measured as three identical generic deaths ~7 minutes apart. The Chromium stack
+  // carries no such deadline.
+  const doFetch = net && net.fetch ? net.fetch.bind(net) : fetch
+  const r = await doFetch(`${BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
   const data = await r.json().catch(() => null)
   return { status: r.status, data }
 }
@@ -100,7 +106,7 @@ ipcMain.handle('milpa:drive', async (_e, { query, session: sid }) => {
   const s = sid || 'default'
   try {
     const { status, data } = await agentHttp('POST', '/agent', { query, session: s, mode: 'ask' })
-    if (status !== 404) { const r = (data && data.result) ? data.result : (data || {}); return { ok: status < 300 && r.ok !== false, session: s, answer: r.answer, steps: r.steps, tools: r.tools } }
+    if (status !== 404) { const r = (data && data.result) ? data.result : (data || {}); return { ok: status < 300 && r.ok !== false, session: s, answer: r.answer, steps: r.steps, tools: r.tools, error: r.error || (status >= 300 ? `HTTP ${status}` : undefined) } }
   } catch {}
   if (AGENT_HTTP_ONLY) return { ok: false, session: s, answer: null, error: 'agent web door unreachable (http-only)' }
   // fallback: docker exec (unwired container)
