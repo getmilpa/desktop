@@ -53,6 +53,20 @@ const exec = (cmd, args, opts = {}) => new Promise((res) => {
 })
 
 async function startBackend () {
+  // MILPA_KEEP_BACKEND=1: attach to an already-running backend instead of recreating it — the knob
+  // that lets the UI restart (to pick up a shell fix) WITHOUT killing the live sessions inside the
+  // container. Measured need: a session mid-build died with the container on every relaunch.
+  if (process.env.MILPA_KEEP_BACKEND === '1') {
+    try {
+      const up = sh('docker', ['ps', '--filter', `name=^${NAME}$`, '--format', '{{.Names}}'])
+      if (up === NAME) {
+        for (let i = 0; i < 10; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 500)) }
+        try { const out = sh('docker', ['exec', NAME, 'php', 'bin/coa', 'token:new', '--actor=desktop', '--scopes=*', '--scopes=milpa:component:data-table:*', '--scopes=milpa:component:autocomplete:*', '--scopes=milpa:component:metric-card:*', '--scopes=milpa:component:state-machine:*', '--scopes=milpa:component:dashboard-grid:*', '--scopes=milpa:component:input:*', '--scopes=milpa:component:select:*', '--scopes=milpa:component:checkbox:*', '--scopes=milpa:component:textarea:*', '--scopes=agent:read', '--scopes=agent:answer', '--scopes=agent:run'])
+              const m = out.match(/^token:\s*(\S+)/m); token = m ? m[1] : null } catch {}
+        return
+      }
+    } catch {}
+  }
   try { sh('docker', ['rm', '-f', NAME]) } catch {}
   // --network host so the container can reach the local model (llama.local); the board is served on HOST_PORT.
   try { fs.mkdirSync(HOST_GNUPG, { recursive: true, mode: 0o700 }) } catch {}
@@ -74,7 +88,7 @@ async function startBackend () {
   try { const out = sh('docker', ['exec', NAME, 'php', 'bin/coa', 'token:new', '--actor=desktop', '--scopes=*', '--scopes=milpa:component:data-table:*', '--scopes=milpa:component:autocomplete:*', '--scopes=milpa:component:metric-card:*', '--scopes=milpa:component:state-machine:*', '--scopes=milpa:component:dashboard-grid:*', '--scopes=milpa:component:input:*', '--scopes=milpa:component:select:*', '--scopes=milpa:component:checkbox:*', '--scopes=milpa:component:textarea:*', '--scopes=agent:read', '--scopes=agent:answer', '--scopes=agent:run'])
         const m = out.match(/^token:\s*(\S+)/m); token = m ? m[1] : null } catch {}
 }
-function stopBackend () { try { sh('docker', ['rm', '-f', NAME]) } catch {} }
+function stopBackend () { if (process.env.MILPA_KEEP_BACKEND === '1') return; try { sh('docker', ['rm', '-f', NAME]) } catch {} }
 
 // ── IPC: the narrow bridge the preload exposes ─────────────────────────────────────────────────
 ipcMain.handle('milpa:api', async (_e, p) => {
