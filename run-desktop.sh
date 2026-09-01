@@ -11,6 +11,8 @@
 #   MILPA_AGENT_BASE_URL   the model endpoint (default: http://llama.local:11438) — set to your own LAN IP
 #                          if `.local` mDNS does not resolve inside the container (common on macOS Docker).
 #   MILPA_AGENT_MODEL      the model name (default: qwen3.8-27b)
+#   MILPA_AGENT_CONTEXT_TOKENS  the model's context budget (default: 24576 — qwen-32k minus the
+#                          Desktop's tool-schema share; raise it for bigger models)
 #
 # (c) Rodrigo Vicente - TeamX Agency — Apache-2.0
 set -u

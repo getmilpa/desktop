@@ -38,6 +38,12 @@ const NAME = 'milpa-desktop-backend'
 const HOST_PORT = process.env.MILPA_PORT || '8899'
 const BASE = `http://127.0.0.1:${HOST_PORT}`
 const MODEL = { base: process.env.MILPA_AGENT_BASE_URL || 'http://llama.local:11438', name: process.env.MILPA_AGENT_MODEL || 'qwen3.8-27b' }
+// The model's declared context budget, handed to the backend so the Compactor fits the WHOLE window
+// by construction (app-runtime >=0.95). 24576 and not 32768: the Desktop's outside share (59 tool
+// schemas + system) is fatter than a bare cattle app's, so the composed target must leave real
+// headroom — measured the hard way when an unbudgeted session died at 37k against qwen's 32.7k.
+// Override via MILPA_AGENT_CONTEXT_TOKENS for bigger models.
+const CTX = process.env.MILPA_AGENT_CONTEXT_TOKENS || '24576'
 let token = null
 const VERSION = require('./package.json').version
 
@@ -58,7 +64,7 @@ async function startBackend () {
   const net = IS_MAC ? ['-p', `${HOST_PORT}:${HOST_PORT}`] : ['--network', 'host']
   // The model config goes on the CONTAINER (not just per docker-exec), so the agent web door
   // (POST /agent over HTTP, greenhouse decisions/0155) reaches the local model too.
-  const modelEnv = ['-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=']
+  const modelEnv = ['-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', '-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`]
   sh('docker', ['run', '-d', '--name', NAME, ...net, '-e', `PORT=${HOST_PORT}`, ...modelEnv, ...mounts, IMAGE,
     'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php'])
   for (let i = 0; i < 40; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 800)) }
@@ -99,7 +105,7 @@ ipcMain.handle('milpa:drive', async (_e, { query, session: sid }) => {
   if (AGENT_HTTP_ONLY) return { ok: false, session: s, answer: null, error: 'agent web door unreachable (http-only)' }
   // fallback: docker exec (unwired container)
   const { err, out } = await exec('docker',
-    ['exec', '-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=',
+    ['exec', '-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', '-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`,
      NAME, 'php', 'bin/coa', 'agent', query, `--session=${s}`, '--mode=ask', '--json'])
   let doc = null; try { doc = JSON.parse(out.trim().split('\n').filter(Boolean).pop()) } catch {}
   if (doc) { const r = (doc && doc.result) ? doc.result : doc; return { ok: r.ok !== false && !err, session: s, answer: r.answer, steps: r.steps, tools: r.tools } }
