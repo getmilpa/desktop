@@ -118,12 +118,22 @@ async function agentHttp (method, path, body) {
 }
 ipcMain.handle('milpa:drive', async (_e, { query, session: sid }) => {
   const s = sid || 'default'
-  try {
-    const { status, data } = await agentHttp('POST', '/agent', { query, session: s, mode: 'ask' })
-    if (status !== 404) { const r = (data && data.result) ? data.result : (data || {}); return { ok: status < 300 && r.ok !== false, session: s, answer: r.answer, steps: r.steps, tools: r.tools, closure: r.closure, error: r.error || (status >= 300 ? `HTTP ${status}` : undefined) } }
-  } catch {}
-  if (AGENT_HTTP_ONLY) return { ok: false, session: s, answer: null, error: 'agent web door unreachable (http-only)' }
-  // fallback: docker exec (unwired container)
+  // DRIVE GOES OVER EXEC, not HTTP. A drive is a MINUTES-long blocking request; every HTTP client
+  // in this stack carries some deadline (undici's headersTimeout killed it first, Chromium's
+  // ~300s transaction timeout killed it next), and when the client dies the PHP run KEEPS GOING
+  // server-side — the UI reports death over a leg that is alive, and a retry stacks a second
+  // concurrent leg on the same session. Measured three separate evenings. The exec path has no
+  // deadline and its output is captured reliably. The web door (decisions/0155) remains the channel
+  // for everything short — answer, show, reads; the long-running drive earns the exception until
+  // the door grows an async accept-and-poll shape (board: C-3, surrender the turn).
+  if (AGENT_HTTP_ONLY) {
+    try {
+      const { status, data } = await agentHttp('POST', '/agent', { query, session: s, mode: 'ask' })
+      if (status !== 404) { const r = (data && data.result) ? data.result : (data || {}); return { ok: status < 300 && r.ok !== false, session: s, answer: r.answer, steps: r.steps, tools: r.tools, closure: r.closure, error: r.error || (status >= 300 ? `HTTP ${status}` : undefined) } }
+    } catch {}
+    return { ok: false, session: s, answer: null, error: 'agent web door unreachable (http-only)' }
+  }
+  // the drive path: docker exec (no client deadline can kill a live run)
   const { err, out } = await exec('docker',
     ['exec', '-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', '-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`,
      NAME, 'php', 'bin/coa', 'agent', query, `--session=${s}`, '--mode=ask', '--json'])
