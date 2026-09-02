@@ -45,6 +45,23 @@ function md (s) {
 }
 const clean = (h) => h.replace(/^<p[^>]*>|<\/p>$/g, '')
 
+function isClosure (value) { return value && typeof value === 'object' && typeof value.verified === 'boolean' }
+function renderAgentAnswer (answer, closure) {
+  const raw = cleanQuestion(String(answer ?? '')).trim()
+  const answerHtml = md(raw || tr('agent.noAnswer'))
+  if (!isClosure(closure)) return answerHtml
+
+  const verified = closure.verified
+  const reasons = Array.isArray(closure.reasons) ? closure.reasons.map(x => String(x).trim()).filter(Boolean) : []
+  const reasonHtml = !verified && reasons.length
+    ? `<p class="mui-alert__desc">${tr('closure.reasons')}</p>${md(reasons.map(x => `- ${x}`).join('\n'))}`
+    : ''
+  const trivial = Array.from(raw).length <= 3
+  return `<div class="mui-alert ${verified ? 'mui-alert--success' : 'mui-alert--warning'} closure-verdict" role="status">
+    <span class="mui-alert__icon">${verified ? '✓' : '!'}</span><div class="mui-alert__content"><p class="mui-alert__title">${tr(verified ? 'closure.verified' : 'closure.unverified')}</p>${reasonHtml}</div></div>
+    <div class="closure-answer${trivial ? ' dv-note' : ''}" style="margin-top:var(--space-2)${trivial ? ';opacity:.6' : ''}">${answerHtml}</div>`
+}
+
 // ── conversation ────────────────────────────────────────────────────────────────────────────────
 function clearEmpty () { const e = $('#conv .mui-empty'); if (e) $('#conv').innerHTML = '' }
 function scroll () { const c = $('#conv'); c.scrollTop = c.scrollHeight }
@@ -227,15 +244,16 @@ async function send (forced) {
   clearInterval(poll)
   const { meta, ans } = finalize()
   if (res && res.ok !== false) {
+    await refreshShow()
     // A turn can also return WITH a pending question (drive resolved but the agent parked) — honor that too.
     if (res.question || (res.answer == null && res.ok !== false && !res.steps && !res.tools)) {
       if (meta) meta.textContent = 'agente · pregunta pendiente · responde en Decisiones'
       if (ans) ans.innerHTML = md(tr('conv.parkedNote'))
     } else {
       if (meta) meta.textContent = tr('agent.steps', { steps: res.steps || '', tools: res.tools || '' })
-      if (ans) ans.innerHTML = md(cleanQuestion(res.answer) || tr('agent.noAnswer'))
+      const closure = isClosure(res.closure) ? res.closure : (lastShow && lastShow.closure)
+      if (ans) ans.innerHTML = renderAgentAnswer(res.answer, closure)
     }
-    await refreshShow()
     if (!(lastShow && lastShow.question)) setLive('idle', tr('live.live'))   // the turn is done — don't leave «Trabajando…» stuck
   } else { if (ans) ans.innerHTML = md(tr('conv.driveError') + (res?.error || tr('conv.driveErrorHint'))); setLive('err', tr('live.error')) }
   scroll(); endBusy()
@@ -266,14 +284,20 @@ async function paintHistory () {
     const an = bubble.querySelector('.h-answer'); if (an && answerHtml != null) an.innerHTML = answerHtml
     bubble = null
   }
-  let steps = 0, toolN = 0
+  let steps = 0, toolN = 0, lastAnswer = null
   for (const e of events) {
     const p = e.payload || {}
     if (e.type === 'session.turn' && p.role === 'user') {
       close(tr('agent.steps', { steps: steps || 1, tools: toolN }), null); steps = 0; toolN = 0
+      lastAnswer = null
       addUser(String(p.content || ''), e.recorded_at)
     } else if (e.type === 'session.turn' && p.role === 'assistant') {
-      ensureAgent(); close(tr('agent.steps', { steps: steps || 1, tools: toolN }), md(cleanQuestion(String(p.content || '')) || tr('agent.noAnswer'))); steps = 0; toolN = 0
+      ensureAgent()
+      lastAnswer = { bubble, answer: String(p.content || '') }
+      close(tr('agent.steps', { steps: steps || 1, tools: toolN }), renderAgentAnswer(lastAnswer.answer)); steps = 0; toolN = 0
+    } else if (e.type === 'session.closure_derived' && lastAnswer && isClosure(p)) {
+      const answer = lastAnswer.bubble.querySelector('.h-answer')
+      if (answer) answer.innerHTML = renderAgentAnswer(lastAnswer.answer, p)
     } else if (e.type === 'session.model_reasoned') {
       ensureAgent()
       const host = bubble.querySelector('.h-reason'); const t = String(p.reasoning || '').trim()

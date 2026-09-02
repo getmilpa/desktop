@@ -120,7 +120,7 @@ ipcMain.handle('milpa:drive', async (_e, { query, session: sid }) => {
   const s = sid || 'default'
   try {
     const { status, data } = await agentHttp('POST', '/agent', { query, session: s, mode: 'ask' })
-    if (status !== 404) { const r = (data && data.result) ? data.result : (data || {}); return { ok: status < 300 && r.ok !== false, session: s, answer: r.answer, steps: r.steps, tools: r.tools, error: r.error || (status >= 300 ? `HTTP ${status}` : undefined) } }
+    if (status !== 404) { const r = (data && data.result) ? data.result : (data || {}); return { ok: status < 300 && r.ok !== false, session: s, answer: r.answer, steps: r.steps, tools: r.tools, closure: r.closure, error: r.error || (status >= 300 ? `HTTP ${status}` : undefined) } }
   } catch {}
   if (AGENT_HTTP_ONLY) return { ok: false, session: s, answer: null, error: 'agent web door unreachable (http-only)' }
   // fallback: docker exec (unwired container)
@@ -128,7 +128,7 @@ ipcMain.handle('milpa:drive', async (_e, { query, session: sid }) => {
     ['exec', '-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', '-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`,
      NAME, 'php', 'bin/coa', 'agent', query, `--session=${s}`, '--mode=ask', '--json'])
   let doc = null; try { doc = JSON.parse(out.trim().split('\n').filter(Boolean).pop()) } catch {}
-  if (doc) { const r = (doc && doc.result) ? doc.result : doc; return { ok: r.ok !== false && !err, session: s, answer: r.answer, steps: r.steps, tools: r.tools } }
+  if (doc) { const r = (doc && doc.result) ? doc.result : doc; return { ok: r.ok !== false && !err, session: s, answer: r.answer, steps: r.steps, tools: r.tools, closure: r.closure } }
   const grab = (k) => (out.match(new RegExp(`^${k}:\\s*([\\s\\S]*?)(?=\\n\\w+:|$)`, 'm')) || [])[1]?.trim()
   return { ok: !err, session: s, answer: grab('answer'), steps: grab('steps'), tools: grab('tools'), raw: out.slice(-4000) }
 })

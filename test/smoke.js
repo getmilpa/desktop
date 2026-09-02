@@ -26,6 +26,7 @@ app.whenReady().then(async () => {
     record('token chip shows window tokens', await js("(document.querySelector('#st-tokens')||{}).textContent||''").then(t => /en ventana/.test(t)), 'chip empty')
     await js("document.querySelector('#auth-open') && document.querySelector('#auth-open').click()"); await sleep(900)
     record('app entered', await js("!!document.querySelector('.app') && !document.querySelector('.app').hidden"))
+    record('conversation: reload projects session.closure_derived as a verdict', await js("!!document.querySelector('.closure-verdict.mui-alert--warning') && !!document.querySelector('.closure-answer.dv-note')"))
     // polish (Rod's macOS review): the logo and nav icons must actually render — not placeholder glyphs.
     record('brand: the Milpa M mark is an SVG', await js("!!document.querySelector('.mui-sidebar__brand svg.milpa-mark rect')"))
     record('nav icons render as SVG (not tofu glyphs)', await js("document.querySelectorAll('.mui-sidebar__item-icon svg').length") >= 4)
@@ -47,7 +48,7 @@ app.whenReady().then(async () => {
     // BUG 1 (greenhouse decisions/0132): a turn that ENDS IN A QUESTION must not freeze Conversación on «pensando».
     // The fixture models it: the stream carries session.question_asked and drive() never resolves. The fix parks
     // the bubble out of «pensando» from the EVENT STREAM, not from drive returning.
-    await js("var n=document.querySelector('[data-nav=\"sesiones\"]'); n && n.click()"); await sleep(400)
+    await js("var n=document.querySelector('[data-nav=\"sesiones\"]');n&&n.click();var t=document.querySelector('[data-tab=\"conversacion\"]');t&&t.click()"); await sleep(400)
     await js("var q=document.querySelector('#query'); if(q){q.value='hazme un blog sobre X'} var s=document.querySelector('#send'); s && s.click()")
     await sleep(1800) // > one poll cycle (1200ms) so the stream's question_asked is seen
     const parked = await js("(function(){var b=document.querySelectorAll('.msg-agent'); b=b[b.length-1]; return b?b.textContent:''})()")
@@ -58,11 +59,20 @@ app.whenReady().then(async () => {
     await sleep(1000)
     const live = await js("(document.querySelector('#st-live')||{}).textContent||''")
     record('status: the live chip resets to «Live» after a resolved turn (not stuck «Working»)', /Live/.test(live) && !/Working|Trabajando/.test(live), 'live=' + live.trim())
+    const unverified = await js("(function(){var b=document.querySelectorAll('.msg-agent');b=b[b.length-1];var v=b&&b.querySelector('.closure-verdict');var r=b&&b.querySelector('.closure-answer');return {text:b?b.textContent:'',warning:!!(v&&v.classList.contains('mui-alert--warning')),raw:r?r.textContent:'',muted:!!(r&&r.classList.contains('dv-note'))}})()")
+    record('closure: an unverified finish is an amber verdict with its recorded reasons', unverified.warning && /Closure not verified/.test(unverified.text) && /5 todos open/.test(unverified.text), 'bubble=' + unverified.text.replace(/\s+/g, ' ').slice(0, 100))
+    record('closure: a trivial raw model token stays visible but muted', unverified.muted && /🔧/.test(unverified.raw), 'raw=' + unverified.raw)
+    await js("var q=document.querySelector('#query');if(q){q.value='done verified'}var s=document.querySelector('#send');s&&s.click()")
+    await sleep(1000)
+    const verified = await js("(function(){var b=document.querySelectorAll('.msg-agent');b=b[b.length-1];var v=b&&b.querySelector('.closure-verdict');var r=b&&b.querySelector('.closure-answer');return {text:b?b.textContent:'',success:!!(v&&v.classList.contains('mui-alert--success')),muted:!!(r&&r.classList.contains('dv-note'))}})()")
+    record('closure: a verified finish is a green checked verdict', verified.success && /✓/.test(verified.text) && /Closed, verified/.test(verified.text), 'bubble=' + verified.text.replace(/\s+/g, ' ').slice(0, 100))
+    record('closure: a substantive model answer keeps normal emphasis', !verified.muted)
     await shot('7-status-reset.png')
     // i18n (decisions/0138): English is the default; Spanish is a first-class option via the locale switch.
     record('i18n: the nav renders in English by default', await js("(document.querySelector('[data-i18n=\"nav.sessions\"]')||{}).textContent") === 'Sessions')
     await js("window.milpaI18n && window.milpaI18n.setLocale('es')"); await sleep(200)
     record('i18n: switching to es renders the nav in Spanish', await js("(document.querySelector('[data-i18n=\"nav.sessions\"]')||{}).textContent") === 'Sesiones')
+    record('i18n: closure verdict copy is available in Spanish', await js("window.milpaI18n && window.milpaI18n.t('closure.verified')") === 'Cerrado verificado')
     await js("window.milpaI18n && window.milpaI18n.setLocale('en')"); await sleep(200)
     record('i18n: switching back to en restores English', await js("(document.querySelector('[data-i18n=\"nav.sessions\"]')||{}).textContent") === 'Sessions')
     await shot('8-i18n-en.png')
