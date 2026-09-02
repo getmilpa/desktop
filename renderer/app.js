@@ -21,6 +21,9 @@ async function loadCatalogue () {
   toolMutating = map
 }
 let current = (() => { try { return localStorage.getItem('milpa.session') || 'default' } catch { return 'default' } })()
+// Default autonomy for new drives (Rod, 2026-09-02): `auto` unless the human chose `ask` in Settings.
+// The gate still stops for signatures and underdetermined intent server-side; this only sets the default.
+function autonomyDefault () { try { const v = localStorage.getItem('milpa.autonomy'); return v === 'ask' ? 'ask' : 'auto' } catch { return 'auto' } }
 let sending = false
 
 // ── minimal markdown (headings, bold, code, tables, lists) ──────────────────────────────────────
@@ -79,15 +82,15 @@ function toolCard (p) {
   // read ops to «mutante»), nor on «found» (which matched read ops like foundation:found).
   const declared = toolMutating && p.tool != null ? toolMutating[p.tool] : undefined
   const mut = declared !== undefined ? declared : /write|make|set|enable|disable|register/.test(p.tool || '')
-  const d = el('details', { className: 'mui-card mui-card--compact' }); d.style.margin = 'var(--space-2) 0'
+  const d = el('details', { className: 'mui-card mui-card--compact' }); d.style.margin = 'var(--space-3) 0'
   // fmtArgVal (not String(v)): an array/object arg like `edits:[{find,replace}]` becomes readable
   // JSON instead of «[object Object]». The summary line clips with ellipsis, so length is bounded.
   const args = p.arguments && Object.keys(p.arguments).length ? Object.entries(p.arguments).map(([k, v]) => `${k}=${fmtArgVal(v)}`).join(' ') : ''
   const res = fmtResult(p.result).slice(0, 800)
-  d.innerHTML = `<summary style="display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);cursor:pointer;font-family:var(--font-mono);font-size:var(--text-xs)">
-    <span class="mui-badge ${ok ? 'mui-badge--success' : 'mui-badge--danger'}">${ok ? 'ok' : 'err'}</span><span>${p.tool || 'tool'}</span>
-    <span style="color:var(--text-muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${args}</span>
-    <span class="mui-badge ${mut ? 'mui-badge--warning' : ''}" style="margin-inline-start:auto">${mut ? 'mutante' : 'llamada, no efecto'}</span></summary>
+  d.innerHTML = `<summary style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);cursor:pointer;font-family:var(--font-mono);font-size:var(--text-xs)">
+    <span class="mui-badge ${ok ? 'mui-badge--success' : 'mui-badge--danger'}" style="flex:none">${ok ? 'ok' : 'err'}</span><span style="flex:none;font-weight:600;color:var(--text)">${p.tool || 'tool'}</span>
+    <span style="flex:1 1 auto;color:var(--text-secondary);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${args}</span>
+    <span class="mui-badge ${mut ? 'mui-badge--warning' : ''}" style="flex:none">${mut ? 'mutante' : 'llamada, no efecto'}</span></summary>
     ${res ? `<div class="mui-terminal" style="margin:0 var(--space-3) var(--space-3)"><div class="mui-terminal__bar"><span class="dv-note">salida de la herramienta${p.resultChars ? ' · ' + p.resultChars + ' chars' : ''}</span></div><div class="mui-terminal__body"><p class="mui-terminal__line"><span class="mui-terminal__out" style="white-space:pre-wrap;overflow-wrap:anywhere">${clean(res)}</span></p></div></div>` : ''}`
   return d
 }
@@ -239,7 +242,7 @@ async function send (forced) {
     }
     seen += events.length; scroll()
   }, 1200)
-  const res = await bridge.drive(q, current)
+  const res = await bridge.drive(q, current, autonomyDefault())
   if (parked) return   // the poll already surfaced the parked-on-question state; don't clobber it
   clearInterval(poll)
   const { meta, ans } = finalize()
@@ -327,7 +330,7 @@ async function refreshShow () {
   if (!bridge) return
   const show = await bridge.show(current); lastShow = show
   if (!show || show.ok === false) return
-  if (show.goal) { const g = $('#goal'); g.textContent = show.goal; g.title = show.goal; $('#goal-sub').textContent = tr('inspector.sessionMode', { session: current, mode: show.mode || 'ask' }) }
+  if (show.goal) { const g = $('#goal'); g.textContent = show.goal; g.title = show.goal; $('#goal-sub').textContent = tr('inspector.sessionMode', { session: current, mode: show.mode || autonomyDefault() }) }
   renderInspector(show); renderWork(show); renderContext(show); renderDecisiones(show)
   checkInterrupted(show)
   const pend = !!show.question
@@ -950,6 +953,21 @@ $('#export-btn')?.addEventListener('click', exportSession)
     document.querySelectorAll('[data-theme-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
     const v = b.dataset.themeSet; document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'
   }))
+  // Default autonomy: reflect the stored value (default `auto`), and persist on change AND on Save —
+  // so the choice survives a reload and the next drive honors it (main.js reads the passed mode).
+  const reflectAutonomy = () => { const cur = autonomyDefault(); document.querySelectorAll('[data-autonomy-set]').forEach(r => { r.checked = r.dataset.autonomySet === cur }) }
+  reflectAutonomy()
+  document.querySelectorAll('[data-autonomy-set]').forEach(r => r.addEventListener('change', () => {
+    if (r.checked) { try { localStorage.setItem('milpa.autonomy', r.dataset.autonomySet === 'ask' ? 'ask' : 'auto') } catch {} ; if (typeof lastShow !== 'undefined' && lastShow) refreshShow() }
+  }))
+  const setSaved = document.querySelector('[data-i18n="settings.save"]')
+  if (setSaved) setSaved.addEventListener('click', () => {
+    const picked = document.querySelector('[data-autonomy-set]:checked')
+    if (picked) { try { localStorage.setItem('milpa.autonomy', picked.dataset.autonomySet === 'ask' ? 'ask' : 'auto') } catch {} }
+    if (typeof lastShow !== 'undefined' && lastShow) refreshShow()
+  })
+  const setDiscard = document.querySelector('[data-i18n="settings.discard"]')
+  if (setDiscard) setDiscard.addEventListener('click', reflectAutonomy)
   refreshSessions(); refreshShow()
 })()
 

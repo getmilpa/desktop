@@ -166,22 +166,22 @@
 
       <!-- ============ SETTINGS SCREEN (Ajustes) ============ -->
       <div data-screen="ajustes" hidden style="flex:1;min-height:0;padding:var(--space-6);overflow:auto">
-        <div class="mui-tabs" role="tablist" style="margin-bottom:var(--space-5)">
+        <div class="mui-tabs" role="tablist" style="margin-bottom:var(--space-5);max-width:72rem;margin-inline:auto">
           <button class="mui-tabs__tab" role="tab" aria-selected="true" type="button" data-i18n="settings.tabModel">Model and provider</button>
           <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-i18n="settings.tabAutonomy">Autonomy</button>
           <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-i18n="settings.tabContext">Context and storage</button>
           <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-i18n="settings.tabAppearance">Appearance</button>
           <button class="mui-tabs__tab" role="tab" aria-selected="false" type="button" data-i18n="settings.tabFoundation">Foundation</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5);align-items:start">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:var(--space-6);align-items:start;max-width:72rem;margin-inline:auto">
           <div class="mui-card mui-card--raised"><div class="mui-card__header"><h2 class="mui-card__title" data-i18n="settings.tabModel">Model and provider</h2></div><div class="mui-card__body mui-stack">
             <div class="mui-field"><label class="mui-field__label" data-i18n="settings.provider">Provider</label><span class="mui-select-wrap"><select class="mui-select"><option data-i18n="provider.local">Local model</option><option data-i18n="provider.lan">Local-network model</option><option data-i18n="provider.external">External provider</option></select></span></div>
             <div class="mui-field"><label class="mui-field__label">Endpoint</label><input class="mui-input" id="set-endpoint" style="font-family:var(--font-mono);font-size:var(--text-xs)" value=""><span class="mui-field__hint" data-i18n="settings.endpointHint">The endpoint receives the model’s context. It runs no operations.</span></div>
             <div class="mui-field mui-field--row"><input class="mui-switch" type="checkbox" id="set-stream" checked><label class="mui-field__label" for="set-stream" data-i18n="settings.showLive">Show live work (streaming)</label></div>
           </div></div>
           <div class="mui-card mui-card--raised"><div class="mui-card__header"><h2 class="mui-card__title" data-i18n="autonomy.default">Default autonomy</h2></div><div class="mui-card__body mui-stack mui-stack--sm">
-            <label class="mui-choice"><input class="mui-radio" type="radio" name="mode" checked><span class="mui-choice__text"><span data-i18n="autonomy.ask">Ask before changing</span> <span class="mui-badge" style="margin-inline-start:6px">ask</span><span class="mui-choice__hint" data-i18n="autonomy.askHint">Pauses mutations without a standing permission.</span></span></label>
-            <label class="mui-choice"><input class="mui-radio" type="radio" name="mode"><span class="mui-choice__text"><span data-i18n="autonomy.auto">Continue automatically</span> <span class="mui-badge" style="margin-inline-start:6px">auto</span><span class="mui-choice__hint" data-i18n="autonomy.autoHint">Does not pause on mutation; signatures and incomplete intent still stop it.</span></span></label>
+            <label class="mui-choice"><input class="mui-radio" type="radio" name="mode" value="ask" data-autonomy-set="ask"><span class="mui-choice__text"><span data-i18n="autonomy.ask">Ask before changing</span> <span class="mui-badge" style="margin-inline-start:6px">ask</span><span class="mui-choice__hint" data-i18n="autonomy.askHint">Pauses mutations without a standing permission.</span></span></label>
+            <label class="mui-choice"><input class="mui-radio" type="radio" name="mode" value="auto" data-autonomy-set="auto" checked><span class="mui-choice__text"><span data-i18n="autonomy.auto">Continue automatically</span> <span class="mui-badge" style="margin-inline-start:6px">auto</span><span class="mui-choice__hint" data-i18n="autonomy.autoHint">Does not pause on mutation; signatures and incomplete intent still stop it.</span></span></label>
             <div class="mui-alert mui-alert--info" role="note"><span class="mui-alert__icon">i</span><div class="mui-alert__content"><p class="mui-alert__desc" data-i18n="autonomy.note">These values are not yet three behaviourally distinct levels.</p></div></div>
           </div></div>
           <div class="mui-card"><div class="mui-card__header"><h2 class="mui-card__title" data-i18n="settings.tabContext">Context and storage</h2></div><div class="mui-card__body mui-stack mui-stack--sm">
@@ -195,7 +195,7 @@
             <div class="mui-field mui-field--row" style="justify-content:space-between"><label class="mui-field__label" data-i18n="settings.reducedMotion">Respect reduced motion</label><input class="mui-switch" type="checkbox" checked></div>
           </div></div>
         </div>
-        <div class="mui-cluster" style="margin-top:var(--space-6);justify-content:flex-end"><button type="button" class="mui-btn" data-i18n="settings.discard">Discard changes</button><button type="button" class="mui-btn mui-btn--primary" data-i18n="settings.save">Save settings</button></div>
+        <div class="mui-cluster" style="margin-top:var(--space-6);justify-content:flex-end;max-width:72rem;margin-inline:auto"><button type="button" class="mui-btn" data-i18n="settings.discard">Discard changes</button><button type="button" class="mui-btn mui-btn--primary" data-i18n="settings.save">Save settings</button></div>
       </div>
 
       <div data-screen="decisiones" hidden style="flex:1;padding:var(--space-6);overflow:auto"><p class="mui-section__kicker" data-i18n="decisions.kicker">decisions inbox</p><p class="dv-note" id="decisiones-body" data-i18n="decisions.empty">Pending questions from all sessions appear here.</p></div>

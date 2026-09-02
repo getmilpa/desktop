@@ -116,8 +116,12 @@ async function agentHttp (method, path, body) {
   const data = await r.json().catch(() => null)
   return { status: r.status, data }
 }
-ipcMain.handle('milpa:drive', async (_e, { query, session: sid }) => {
+ipcMain.handle('milpa:drive', async (_e, { query, session: sid, mode }) => {
   const s = sid || 'default'
+  // Default autonomy is `auto` (Rod, 2026-09-02): a fresh session continues without pausing on every
+  // mutation. The gate still stops for signatures and underdetermined intent server-side — this only
+  // sets the DEFAULT, never widens the gate. `ask` remains selectable in Settings.
+  const m = (mode === 'ask' || mode === 'auto') ? mode : 'auto'
   // DRIVE GOES OVER EXEC, not HTTP. A drive is a MINUTES-long blocking request; every HTTP client
   // in this stack carries some deadline (undici's headersTimeout killed it first, Chromium's
   // ~300s transaction timeout killed it next), and when the client dies the PHP run KEEPS GOING
@@ -128,7 +132,7 @@ ipcMain.handle('milpa:drive', async (_e, { query, session: sid }) => {
   // the door grows an async accept-and-poll shape (board: C-3, surrender the turn).
   if (AGENT_HTTP_ONLY) {
     try {
-      const { status, data } = await agentHttp('POST', '/agent', { query, session: s, mode: 'ask' })
+      const { status, data } = await agentHttp('POST', '/agent', { query, session: s, mode: m })
       if (status !== 404) { const r = (data && data.result) ? data.result : (data || {}); return { ok: status < 300 && r.ok !== false, session: s, answer: r.answer, steps: r.steps, tools: r.tools, closure: r.closure, error: r.error || (status >= 300 ? `HTTP ${status}` : undefined) } }
     } catch {}
     return { ok: false, session: s, answer: null, error: 'agent web door unreachable (http-only)' }
@@ -136,7 +140,7 @@ ipcMain.handle('milpa:drive', async (_e, { query, session: sid }) => {
   // the drive path: docker exec (no client deadline can kill a live run)
   const { err, out } = await exec('docker',
     ['exec', '-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', '-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`,
-     NAME, 'php', 'bin/coa', 'agent', query, `--session=${s}`, '--mode=ask', '--json'])
+     NAME, 'php', 'bin/coa', 'agent', query, `--session=${s}`, `--mode=${m}`, '--json'])
   let doc = null; try { doc = JSON.parse(out.trim().split('\n').filter(Boolean).pop()) } catch {}
   if (doc) { const r = (doc && doc.result) ? doc.result : doc; return { ok: r.ok !== false && !err, session: s, answer: r.answer, steps: r.steps, tools: r.tools, closure: r.closure, error: r.error } }
   const grab = (k) => (out.match(new RegExp(`^${k}:\\s*([\\s\\S]*?)(?=\\n\\w+:|$)`, 'm')) || [])[1]?.trim()
@@ -161,7 +165,7 @@ ipcMain.handle('milpa:show', async (_e, sid) => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'agent:show', `--session=${s}`, '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false } }
 })
-// Whether a DRIVING `coa agent` run is live in the container (only the driver carries --mode=ask; agent:show /
+// Whether a DRIVING `coa agent` run is live in the container (only the driver carries --mode=; agent:show /
 // agent:answer do not). On startup the renderer uses this to tell an INTERRUPTED prior run — tasks mid-flight,
 // no agent process — from an ongoing one: killing the window kills the exec and leaves work half-done, and the
 // UI must say so rather than look frozen. It does NOT auto-resume; Continuar is the user's verb (decisions/0132).
@@ -203,7 +207,7 @@ ipcMain.handle('milpa:stopAgent', async () => {
   return { ok: true }
 })
 ipcMain.handle('milpa:agentRunning', async () => {
-  const { out } = await exec('docker', ['exec', NAME, 'sh', '-c', "pgrep -f 'coa agent .*--mode=ask' >/dev/null 2>&1 && echo yes || echo no"])
+  const { out } = await exec('docker', ['exec', NAME, 'sh', '-c', "pgrep -f 'coa agent .*--mode=' >/dev/null 2>&1 && echo yes || echo no"])
   return { running: /yes/.test(out) }
 })
 // Who the house recognizes as this session's owner right now — re-verified live by the backend

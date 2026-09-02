@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('milpa', {
   // read the container's HTTP API (Bearer injected by the main process' webRequest hook)
   api: (path) => ipcRenderer.invoke('milpa:api', path),
   // drive the agent loop: run `coa agent <query>` in the container against the configured model
-  drive: (query, session) => ipcRenderer.invoke('milpa:drive', { query, session }),
+  drive: (query, session, mode) => ipcRenderer.invoke('milpa:drive', { query, session, mode }),
   // answer a decision gate (agent:answer) for a session
   answer: (session, decision) => ipcRenderer.invoke('milpa:answer', { session, decision }),
   // runtime facts for the status bar (model, version, backend health)
