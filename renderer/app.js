@@ -145,7 +145,10 @@ function renderGate (q) {
     <p class="mui-gate__facts" style="margin:0">${tr('gate.operation')} <strong>${op}</strong>${args ? ' · ' + args : ''} · ${tr('gate.reason')}: <strong>${q.reason || '—'}</strong> · ${tr('gate.authority')} · ${tr('gate.signature')}: <strong>${tr('gate.notPresented')}</strong></p></div>
     <div class="mui-gate__decisions">${decisions}</div>
     <p class="dv-note" id="gate-status" style="margin:var(--space-1) 0 0" aria-live="polite"></p>
-    <p class="dv-note" style="margin:0">${isEnable && cap ? tr('gate.signHint') : tr('gate.note')}</p></div>`
+    ${isEnable ? '' : `<div class="mui-gate__passkey" style="margin:var(--space-2) 0 0;display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
+      <button type="button" class="mui-btn mui-btn--sm" id="gate-passkey">${tr('gate.approvePasskey')}</button>
+      <button type="button" class="mui-btn mui-btn--ghost mui-btn--sm" id="gate-passkey-enroll">${tr('gate.registerPasskey')}</button></div>`}
+    <p class="dv-note" style="margin:var(--space-1) 0 0">${isEnable && cap ? tr('gate.signHint') : tr('gate.note')}</p></div>`
   c.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', async () => {
     c.querySelectorAll('button').forEach(x => x.disabled = true)
     await bridge.answer(current, b.dataset.d)
@@ -154,6 +157,20 @@ function renderGate (q) {
     // principle: never re-specify what the system can infer). A deny or a scope-adjust does not resume.
     if (b.dataset.d === yesD) { await refreshShow(); send('continúa') } else { refreshShow() }
   }))
+  // Passkey ceremony: opens its own http://localhost window (WebAuthn cannot run in this file:// renderer)
+  // showing THIS operation, so the human authorizes the exact call with a touch (greenhouse decisions/0187).
+  const pkBtn = c.querySelector('#gate-passkey')
+  if (pkBtn) pkBtn.addEventListener('click', async () => {
+    const status = c.querySelector('#gate-status')
+    const r = await (bridge.passkey ? bridge.passkey.approve(current, op, parsedArgs) : Promise.resolve({ opened: false, error: 'no bridge' })).catch(e => ({ opened: false, error: String(e) }))
+    if (status) status.textContent = (r && r.opened) ? tr('gate.passkeyOpened') : tr('gate.passkeyFailed', { error: (r && r.error) || '—' })
+  })
+  const pkEnroll = c.querySelector('#gate-passkey-enroll')
+  if (pkEnroll) pkEnroll.addEventListener('click', async () => {
+    const status = c.querySelector('#gate-status')
+    const r = await (bridge.passkey ? bridge.passkey.enroll() : Promise.resolve({ opened: false, error: 'no bridge' })).catch(e => ({ opened: false, error: String(e) }))
+    if (status) status.textContent = (r && r.opened) ? tr('gate.enrollOpened') : tr('gate.passkeyFailed', { error: (r && r.error) || '—' })
+  })
   const signBtn = c.querySelector('#gate-sign')
   if (signBtn) signBtn.addEventListener('click', async () => {
     const status = c.querySelector('#gate-status')

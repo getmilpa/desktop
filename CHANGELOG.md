@@ -5,6 +5,9 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+### Added
+- Passkey ceremony wiring (greenhouse decisions/0187, D-01): the decision gate now offers **Approve with passkey** and **Register passkey**. Because WebAuthn refuses the `file://` renderer (and an IP is not a valid relying-party id), these open a dedicated `http://localhost` window served by the container (`/webauthn/intent` showing the exact operation, `/webauthn/enroll`), so `navigator.credentials.*` runs at a real origin with rpId `localhost`. New `milpa:passkey` IPC handler + `window.milpa.passkey.{enroll,approve}` bridge. Requires the container app to serve the passkey pages (`milpa/app-runtime ≥ 0.111` + `passkey.rpId` in config). The resume that clears the agent's gate from the ceremony is the remaining backend step.
+
 ## [0.2.1]
 
 ### Fixed

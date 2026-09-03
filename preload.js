@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld('milpa', {
   owner: (session) => ipcRenderer.invoke('milpa:owner', session),
   keys: () => ipcRenderer.invoke('milpa:keys'),
   keygen: (name, email) => ipcRenderer.invoke('milpa:keygen', { name, email }),
+  // Open the passkey ceremony in its own http://localhost window (WebAuthn needs a real origin, not
+  // the file:// renderer). `enroll` registers this device; `approve` shows the exact operation and
+  // authorizes it with a touch (greenhouse decisions/0187, D-01 browser ceremony).
+  passkey: {
+    enroll: () => ipcRenderer.invoke('milpa:passkey', { kind: 'enroll' }),
+    approve: (session, operation, args) => ipcRenderer.invoke('milpa:passkey', { kind: 'intent', session, operation, args }),
+  },
   signOp: (op, args) => ipcRenderer.invoke('milpa:signOp', { op, args }),
   capabilities: () => ipcRenderer.invoke('milpa:capabilities'),
   skills: () => ipcRenderer.invoke('milpa:skills'),
