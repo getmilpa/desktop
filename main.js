@@ -96,6 +96,32 @@ ipcMain.handle('milpa:api', async (_e, p) => {
         const text = await r.text(); try { return { ok: r.ok, status: r.status, json: JSON.parse(text) } } catch { return { ok: r.ok, status: r.status, text } } }
   catch (e) { return { ok: false, error: String(e) } }
 })
+
+// The passkey ceremony opens in ITS OWN window, loaded over http://localhost — never the file:// main
+// renderer, because WebAuthn refuses a file:// origin and an IP is not a valid relying-party id
+// (greenhouse decisions/0187, evidence/0465-0467). localhost resolves to the same container the API
+// uses, so the served page (/webauthn/enroll, /webauthn/intent) runs `navigator.credentials.*` at a
+// real origin with rpId `localhost`, shows the human the operation, and posts the assertion back to the
+// backend that verifies it. The window is a child of the main one and holds no privilege of its own.
+ipcMain.handle('milpa:passkey', async (_e, { kind, session: sid, operation, args } = {}) => {
+  const base = `http://localhost:${HOST_PORT}`
+  let url
+  if (kind === 'intent') {
+    const q = new URLSearchParams({ operation: String(operation || ''), arguments: JSON.stringify(args || {}), session: String(sid || '') })
+    url = `${base}/webauthn/intent?${q.toString()}`
+  } else {
+    url = `${base}/webauthn/enroll`
+  }
+  try {
+    const w = new BrowserWindow({
+      width: 460, height: 520, title: kind === 'intent' ? 'Approve operation' : 'Register a passkey',
+      backgroundColor: '#ffffff', autoHideMenuBar: true,
+      webPreferences: { contextIsolation: true, nodeIntegration: false },
+    })
+    await w.loadURL(url)
+    return { opened: true, url }
+  } catch (e) { return { opened: false, error: String(e) } }
+})
 // The agent over the WEB CHANNEL (greenhouse decisions/0155): the same HTTP surface the live door
 // uses, not docker exec. main proxies these to the container's exposed agent operations with the
 // Bearer; a founded app that does NOT expose them (config/http.php) falls back to docker exec so an
