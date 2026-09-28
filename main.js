@@ -243,7 +243,11 @@ ipcMain.handle('milpa:owner', async (_e, sid) => {
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false } }
 })
 // The session stream — model_called / tool_called / turn — read live so the UI streams the agent's work
-// while `coa agent` is still running. php -S can't hold a long SSE connection, so the renderer polls this.
+// while `coa agent` is still running. The renderer polls it. Not because php -S can't hold an SSE
+// connection — it streams one fine (greenhouse evidence/1035) — but because the bare server answers nobody
+// else while a stream is open (the image now sets PHP_CLI_SERVER_WORKERS, decisions/0504), and because the
+// turn runs through `docker exec`, not through a request a stream could ride. Subscribing to the hub is
+// what would retire the poll; the FrankenPHP image variant carries one on this same port.
 // Save an audit export the renderer composed. The renderer owns the FORMAT (categorising the stream,
 // weighing each component); the main process only owns the file — a Save dialog, then a write. The
 // content never leaves the host.

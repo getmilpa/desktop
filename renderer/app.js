@@ -1,6 +1,7 @@
 // Milpa Desktop renderer. Talks only through window.milpa (preload bridge). The conversation is driven by
 // `coa agent` in the container; while it runs, the UI streams the session's events (tool calls, turns) by
-// polling — php -S can't hold an SSE connection, so the desktop polls the append-only stream live.
+// polling the append-only stream live: the turn runs through `docker exec`, not a request a stream could
+// ride (php -S does stream SSE — greenhouse evidence/1035; see main.js at the stream handler).
 const $ = (s, r = document) => r.querySelector(s)
 const el = (t, p = {}) => Object.assign(document.createElement(t), p)
 const bridge = window.milpa
