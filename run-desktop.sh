@@ -7,7 +7,10 @@
 #   sh run-desktop.sh
 #
 # Env overrides:
-#   MILPA_IMAGE            image to run (default: ghcr.io/getmilpa/framework:dev — public, no auth)
+#   MILPA_IMAGE            image to run. Unset, the shell runs ghcr.io/getmilpa/framework:dev-frankenphp (the
+#                          same app served by FrankenPHP, with the hub the UI subscribes to) and falls back to
+#                          ghcr.io/getmilpa/framework:dev (php -S, the UI polls) when the variant cannot be had.
+#                          Both public, no auth.
 #   MILPA_AGENT_BASE_URL   the model endpoint (default: http://llama.local:11438) — set to your own LAN IP
 #                          if `.local` mDNS does not resolve inside the container (common on macOS Docker).
 #   MILPA_AGENT_MODEL      the model name (default: qwen3.8-27b)
@@ -17,8 +20,8 @@
 # (c) Rodrigo Vicente - TeamX Agency — Apache-2.0
 set -u
 cd "$(dirname "$0")"                                   # repo root
-IMAGE="${MILPA_IMAGE:-ghcr.io/getmilpa/framework:dev}"
-export MILPA_IMAGE="$IMAGE"
+# Only an image the operator NAMED is exported: unset, main.js makes the choice (and reads the server from the image).
+IMAGE="${MILPA_IMAGE:-}"
 
 # Platform: Linux needs a display; macOS does not. The container network (host vs -p) is chosen by main.js.
 case "$(uname -s)" in
@@ -36,10 +39,21 @@ if [ -z "$ELECTRON" ] || [ ! -x "$ELECTRON" ]; then
   exit 1
 fi
 
-# Pull the public image once if it is missing (no local build — the framework arrives inside the container).
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "→ pulling $IMAGE once (public, no auth)…"
-  docker pull "$IMAGE" || { echo "image pull failed — is Docker running?"; exit 1; }
+# Pull the public image once if it is missing (no local build — the framework arrives inside the container). Unnamed,
+# the FrankenPHP variant is tried first and the plain image is the floor — the same order main.js follows.
+if [ -n "$IMAGE" ]; then
+  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "→ pulling $IMAGE once (public, no auth)…"
+    docker pull "$IMAGE" || { echo "image pull failed — is Docker running?"; exit 1; }
+  fi
+else
+  for candidate in ghcr.io/getmilpa/framework:dev-frankenphp ghcr.io/getmilpa/framework:dev; do
+    if docker image inspect "$candidate" >/dev/null 2>&1; then IMAGE=$candidate; break; fi
+    echo "→ pulling $candidate once (public, no auth)…"
+    if docker pull "$candidate" >/dev/null 2>&1; then IMAGE=$candidate; break; fi
+    echo "  (not available — trying the next)"
+  done
+  [ -n "$IMAGE" ] || { echo "image pull failed — is Docker running?"; exit 1; }
 fi
 
 # Clean any stale backend, then launch the shell detached (survives closing this terminal).

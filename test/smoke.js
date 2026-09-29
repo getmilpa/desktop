@@ -68,6 +68,28 @@ app.whenReady().then(async () => {
     record('closure: a verified finish is a green checked verdict', verified.success && /✓/.test(verified.text) && /Closed, verified/.test(verified.text), 'bubble=' + verified.text.replace(/\s+/g, ' ').slice(0, 100))
     record('closure: a substantive model answer keeps normal emphasis', !verified.muted)
     await shot('7-status-reset.png')
+    // THE HUB (greenhouse decisions/0508): with a hub, the model's reasoning streams INTO the bubble while the turn is
+    // still running, the stored fact replaces the draft, and nothing polls. Controls: no hub → the renderer polls;
+    // the hub drops mid-turn → it falls back to polling.
+    const hubTurn = async (scenario) => {
+      await js(`window.milpa.hubStart('${scenario}'); var q=document.querySelector('#query'); q.value='stream the ${scenario} turn'; document.querySelector('#send').click()`)
+      await sleep(800)
+      const mid = await js("(function(){var d=document.querySelector('#live-reasoning .reasoning-draft');return {draft:d?d.textContent:'',busy:!!document.querySelector('#send[data-stop]')}})()")
+      await sleep(2900)
+      const rung = await js("(function(){var h=document.querySelector('#live-reasoning');return {draft:!!(h&&h.querySelector('.reasoning-draft')),text:h?h.textContent:'',tools:document.querySelectorAll('#live-tools > *').length}})()")
+      const calls = (await js('window.milpa.hubProbe()')).eventsCalls   // 3.7 s in: a 1.2 s poll has read 3 times
+      await sleep(1100)
+      return { mid, rung, calls }
+    }
+    const pushed = await hubTurn('hub')
+    record('hub: the reasoning streams into the bubble mid-turn, before the turn resolves', pushed.mid.busy && /Thinking about the plugins/.test(pushed.mid.draft), JSON.stringify(pushed.mid))
+    record('hub: the stored reasoning replaces the streamed draft, and the tool call lands, when the hub rings', !pushed.rung.draft && /counting them/.test(pushed.rung.text) && pushed.rung.tools >= 1, JSON.stringify(pushed.rung))
+    record('hub: nothing polls — 3.7 s into the turn the stream was read only when the hub rang', pushed.calls === 1, 'events reads=' + pushed.calls)
+    await shot('10-hub-streaming.png')
+    const polled = await hubTurn('nohub')
+    record('hub [control]: with no hub the renderer still polls the stream', polled.calls >= 3 && !polled.mid.draft, 'events reads=' + polled.calls)
+    const dropped = await hubTurn('hubdrop')
+    record('hub [control]: when the hub goes away mid-turn, the renderer falls back to polling and still lands the facts', dropped.rung.tools >= 1 && dropped.calls >= 2, JSON.stringify(dropped.rung) + ' reads=' + dropped.calls)
     // i18n (decisions/0138): English is the default; Spanish is a first-class option via the locale switch.
     record('i18n: the nav renders in English by default', await js("(document.querySelector('[data-i18n=\"nav.sessions\"]')||{}).textContent") === 'Sessions')
     await js("window.milpaI18n && window.milpaI18n.setLocale('es')"); await sleep(200)

@@ -41,7 +41,10 @@ MILPA_AGENT_BASE_URL=http://127.0.0.1:11434 MILPA_AGENT_MODEL=your-model sh run-
 ```
 
 Any OpenAI-compatible `/v1/chat/completions` that returns real `tool_calls` works. `MILPA_IMAGE` overrides
-the backend image (default `ghcr.io/getmilpa/framework:dev`).
+the backend image. By default the shell runs `ghcr.io/getmilpa/framework:dev-frankenphp` — the same app served by
+FrankenPHP, with a Mercure hub on the app's own port — and subscribes to it, so the agent's work and the model's
+reasoning stream in as they happen. When that image cannot be had it falls back to `ghcr.io/getmilpa/framework:dev`,
+served by `php -S` with several workers, and the UI polls the session instead.
 
 ## Architecture
 

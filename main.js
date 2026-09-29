@@ -33,7 +33,18 @@ const IS_MAC = process.platform === 'darwin'
 // The distributable binary defaults to the PUBLIC dev image (pulled from ghcr, no clone, no auth): a downloaded
 // Milpa Desktop is self-contained beyond needing Docker. House devs override with a local tag via MILPA_IMAGE
 // (run-desktop.sh sets the graduated one).
-const IMAGE = process.env.MILPA_IMAGE || 'ghcr.io/getmilpa/framework:dev'
+//
+// THE FRANKENPHP VARIANT FIRST, THE PLAIN IMAGE AS THE FLOOR (greenhouse decisions/0508). `:dev-frankenphp` is the
+// same app served by FrankenPHP classic with the Mercure hub built in on the app's own port: the Desktop runs it
+// with ITS OWN command (the entrypoint mints the hub's keys per container) and subscribes to the hub instead of
+// polling. When that tag cannot be had — not pulled yet and no network, or not published yet — the plain `:dev`
+// still runs, under `php -S` with several workers, and the renderer polls as before. MILPA_IMAGE names one image
+// and skips the choice; which server it gets is read from the image, not from its name.
+const IMAGE_PREFERRED = 'ghcr.io/getmilpa/framework:dev-frankenphp'
+const IMAGE_FLOOR = 'ghcr.io/getmilpa/framework:dev'
+let IMAGE = process.env.MILPA_IMAGE || IMAGE_PREFERRED
+let SERVER = 'php-s'   // or 'frankenphp' — read from the image in startBackend()
+let HUB = false        // whether the backend answers as a Mercure hub on its own port — probed, not assumed
 const NAME = 'milpa-desktop-backend'
 const HOST_PORT = process.env.MILPA_PORT || '8899'
 const BASE = `http://127.0.0.1:${HOST_PORT}`
@@ -61,6 +72,8 @@ async function startBackend () {
       const up = sh('docker', ['ps', '--filter', `name=^${NAME}$`, '--format', '{{.Names}}'])
       if (up === NAME) {
         for (let i = 0; i < 10; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 500)) }
+        try { SERVER = serverOf(sh('docker', ['inspect', '--format', '{{.Config.Image}}', NAME])) } catch {}
+        HUB = await probeHub()
         try { const out = sh('docker', ['exec', NAME, 'php', 'bin/coa', 'token:new', '--actor=desktop', '--scopes=*', '--scopes=milpa:component:data-table:*', '--scopes=milpa:component:autocomplete:*', '--scopes=milpa:component:metric-card:*', '--scopes=milpa:component:state-machine:*', '--scopes=milpa:component:dashboard-grid:*', '--scopes=milpa:component:input:*', '--scopes=milpa:component:select:*', '--scopes=milpa:component:checkbox:*', '--scopes=milpa:component:textarea:*', '--scopes=agent:read', '--scopes=agent:answer', '--scopes=agent:run'])
               const m = out.match(/^token:\s*(\S+)/m); token = m ? m[1] : null } catch {}
         return
@@ -68,6 +81,8 @@ async function startBackend () {
     } catch {}
   }
   try { sh('docker', ['rm', '-f', NAME]) } catch {}
+  IMAGE = chooseImage()
+  SERVER = serverOf(IMAGE)
   // --network host so the container can reach the local model (llama.local); the board is served on HOST_PORT.
   try { fs.mkdirSync(HOST_GNUPG, { recursive: true, mode: 0o700 }) } catch {}
   const mounts = ['-v', `${HOST_GNUPG}:/root/.gnupg`]
@@ -79,14 +94,40 @@ async function startBackend () {
   // The model config goes on the CONTAINER (not just per docker-exec), so the agent web door
   // (POST /agent over HTTP, greenhouse decisions/0155) reaches the local model too.
   const modelEnv = ['-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', '-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`]
-  sh('docker', ['run', '-d', '--name', NAME, ...net, '-e', `PORT=${HOST_PORT}`, ...modelEnv, ...mounts, IMAGE,
-    'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php'])
+  // FrankenPHP keeps the image's own entrypoint and command: they read PORT, and the entrypoint is what tells the
+  // app its server is its hub. `php -S` replaces the command, and gets several workers so a long request (a
+  // stream, a turn) does not hold the next one (decisions/0504) — set here too, for an image that predates the ENV.
+  const serve = SERVER === 'frankenphp'
+    ? [IMAGE]
+    : ['-e', 'PHP_CLI_SERVER_WORKERS=8', IMAGE, 'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php']
+  sh('docker', ['run', '-d', '--name', NAME, ...net, '-e', `PORT=${HOST_PORT}`, ...modelEnv, ...mounts, ...serve])
   for (let i = 0; i < 40; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 800)) }
+  HUB = await probeHub()
   // The live door is governed: an action needs a milpa:component:<name>:<action> scope, and the
   // component segment is NOT covered by '*' (greenhouse decisions/0149). Grant the hosted components
   // explicitly so a hosted component's actions round-trip.
   try { const out = sh('docker', ['exec', NAME, 'php', 'bin/coa', 'token:new', '--actor=desktop', '--scopes=*', '--scopes=milpa:component:data-table:*', '--scopes=milpa:component:autocomplete:*', '--scopes=milpa:component:metric-card:*', '--scopes=milpa:component:state-machine:*', '--scopes=milpa:component:dashboard-grid:*', '--scopes=milpa:component:input:*', '--scopes=milpa:component:select:*', '--scopes=milpa:component:checkbox:*', '--scopes=milpa:component:textarea:*', '--scopes=agent:read', '--scopes=agent:answer', '--scopes=agent:run'])
         const m = out.match(/^token:\s*(\S+)/m); token = m ? m[1] : null } catch {}
+}
+// Which image this launch runs: the one MILPA_IMAGE names, else the FrankenPHP variant if it is here or can be
+// pulled, else the plain one. A failed pull is not an error — it is the fallback.
+function chooseImage () {
+  if (process.env.MILPA_IMAGE) return process.env.MILPA_IMAGE
+  for (const img of [IMAGE_PREFERRED, IMAGE_FLOOR]) {
+    try { sh('docker', ['image', 'inspect', img], { stdio: 'ignore' }); return img } catch {}
+    try { sh('docker', ['pull', '--quiet', img], { stdio: 'ignore' }); return img } catch {}
+  }
+  return IMAGE_FLOOR
+}
+// Read from the image, not its tag: the FrankenPHP variant's entrypoint is `milpa-frankenphp` (greenhouse
+// docker/milpa-dev-frankenphp.Dockerfile). Anything else is served by `php -S`.
+function serverOf (image) {
+  try { return /milpa-frankenphp/.test(sh('docker', ['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', image])) ? 'frankenphp' : 'php-s' } catch { return 'php-s' }
+}
+// A hub is known by what it answers (greenhouse decisions/0504): a topic-less subscription is refused with 400
+// (anonymous allowed) or 401 (JWT first). `php -S` answers 404 — no hub, so the renderer polls.
+async function probeHub () {
+  try { const r = await fetch(`${BASE}/.well-known/mercure`, { signal: AbortSignal.timeout(3000) }); try { await r.body?.cancel() } catch {} return r.status === 400 || r.status === 401 } catch { return false }
 }
 function stopBackend () { if (process.env.MILPA_KEEP_BACKEND === '1') return; try { sh('docker', ['rm', '-f', NAME]) } catch {} }
 
@@ -242,12 +283,10 @@ ipcMain.handle('milpa:owner', async (_e, sid) => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'session:owner', `--session=${sid || 'default'}`, '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false } }
 })
-// The session stream — model_called / tool_called / turn — read live so the UI streams the agent's work
-// while `coa agent` is still running. The renderer polls it. Not because php -S can't hold an SSE
-// connection — it streams one fine (greenhouse evidence/1035) — but because the bare server answers nobody
-// else while a stream is open (the image now sets PHP_CLI_SERVER_WORKERS, decisions/0504), and because the
-// turn runs through `docker exec`, not through a request a stream could ride. Subscribing to the hub is
-// what would retire the poll; the FrankenPHP image variant carries one on this same port.
+// The session stream — model_called / tool_called / turn — read so the UI shows the agent's work while
+// `coa agent` is still running. With a hub (the FrankenPHP variant) the renderer reads it when the hub rings
+// (milpa:subscribe below); without one it polls it. The turn runs through `docker exec`, not through a request
+// a stream could ride — so the push comes from the hub the runtime publishes to, not from the drive.
 // Save an audit export the renderer composed. The renderer owns the FORMAT (categorising the stream,
 // weighing each component); the main process only owns the file — a Save dialog, then a write. The
 // content never leaves the host.
@@ -275,6 +314,71 @@ ipcMain.handle('milpa:events', async (_e, { session: sid, since }) => {
   for (const l of out.split('\n')) { if (!l) continue; try { const e = JSON.parse(l); if (e.stream_id === stream) events.push({ type: e.type, payload: e.payload || {} }) } catch {} }
   return { total: events.length, events: events.slice(Math.max(0, since || 0)) }
 })
+// ── the hub: the session's updates PUSHED, instead of polled (greenhouse decisions/0508) ──────────────────
+// The turn still runs through `docker exec`; what changed is how the Desktop learns what it does. The runtime
+// publishes each session fact the moment it is stored — and the model's reasoning while it is still being
+// written — to `milpa/sessions/<id>` on the hub (app-runtime BroadcastingEventStore, decisions/0190). main holds
+// ONE subscription, for the session the renderer is driving, and forwards every update to the renderer.
+//
+// THE KEY STAYS IN THE CONTAINER. The subscriber JWT is signed inside it with the key the entrypoint minted for
+// this container, and it names exactly one topic: the Desktop holds a pass to one session's feed, not the key.
+// The stream is the truth and the hub is its doorbell: a missed update is recovered by reading the stream, so
+// the renderer reads it on every update that is not reasoning, and falls back to polling if the hub goes away.
+const http = require('node:http')
+let hubSub = null   // { session, req, closed }
+const SUBSCRIBER_JWT = '$s=json_decode((string) @file_get_contents(".milpa/secrets.json"), true);$k=$s["workspace"]["mercure"]["subscriber_key"] ?? "";' +
+  'if (!is_string($k) || $k === "") { exit(3); }$b=fn($x)=>rtrim(strtr(base64_encode($x), "+/", "-_"), "=");' +
+  '$h=$b(json_encode(["alg"=>"HS256","typ"=>"JWT"]));$p=$b(json_encode(["mercure"=>["subscribe"=>[$argv[1]]],"exp"=>time()+86400]));' +
+  'echo $h, ".", $p, ".", $b(hash_hmac("sha256", "$h.$p", $k, true));'
+function toRenderer (msg) { for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send('milpa:hub', msg) } catch {} } }
+function closeHub () { if (hubSub) { hubSub.closed = true; try { hubSub.req.destroy() } catch {} hubSub = null } }
+function openHub (sid, jwt, attempt) {
+  const topic = 'milpa/sessions/' + sid
+  const sub = { session: sid, closed: false, req: null }
+  const url = new URL(`${BASE}/.well-known/mercure`); url.searchParams.set('topic', topic)
+  sub.req = http.get(url, { headers: { Authorization: `Bearer ${jwt}`, Accept: 'text/event-stream' } }, (res) => {
+    if (res.statusCode !== 200) { res.resume(); if (!sub.closed) { sub.closed = true; toRenderer({ session: sid, closed: true, status: res.statusCode }) } return }
+    toRenderer({ session: sid, open: true, reconnected: attempt > 0 })
+    let buf = ''
+    res.setEncoding('utf8')
+    res.on('data', (chunk) => {
+      buf += chunk
+      let i
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2)
+        const data = block.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).replace(/^ /, '')).join('\n')
+        if (!data) continue
+        try { toRenderer({ session: sid, update: JSON.parse(data) }) } catch {}
+      }
+    })
+    // A hub may close a long-lived stream (a write timeout, a restart). Reconnect a few times before telling
+    // the renderer to fall back; each reconnect is a doorbell of its own, since updates may have been missed.
+    res.on('end', () => reconnect())
+    res.on('error', () => reconnect())
+  })
+  sub.req.on('error', () => reconnect())
+  const reconnect = () => {
+    if (sub.closed || hubSub !== sub) return
+    sub.closed = true
+    if (attempt >= 3) { hubSub = null; toRenderer({ session: sid, closed: true }); return }
+    setTimeout(() => { if (hubSub === sub) { hubSub = openHub(sid, jwt, attempt + 1) } }, 500 * (attempt + 1))
+  }
+  return sub
+}
+ipcMain.handle('milpa:subscribe', async (_e, { session: sid } = {}) => {
+  const s = String(sid || 'default')
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(s)) return { live: false, reason: 'session id is not a topic' }
+  if (!HUB) return { live: false, reason: 'no hub on this backend', server: SERVER }
+  if (hubSub && hubSub.session === s && !hubSub.closed) return { live: true, session: s }
+  closeHub()
+  const { err, out } = await exec('docker', ['exec', NAME, 'php', '-r', SUBSCRIBER_JWT, '--', 'milpa/sessions/' + s])
+  const jwt = (out || '').trim()
+  if (err || !/^[\w-]+\.[\w-]+\.[\w-]+$/.test(jwt)) return { live: false, reason: 'the backend holds no subscriber key' }
+  hubSub = openHub(s, jwt, 0)
+  return { live: true, session: s }
+})
+ipcMain.handle('milpa:unsubscribe', async () => { closeHub(); return { ok: true } })
+
 // ── identity / key custody (greenhouse decisions/0121) ──────────────────────────────────────────
 // gpg runs INSIDE the container, but over the mounted host GNUPGHOME — so keys live on the host, never
 // in the ephemeral backend. `keys` also reports whether a YubiKey/smartcard is reachable (card custody).
@@ -361,7 +465,7 @@ ipcMain.handle('milpa:enableCapability', async (_e, capability) => {
   const { err, out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'capabilities:enable', `--capability=${cap}`, '--sign', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: !err, raw: (out || String(err)).slice(-2000) } }
 })
-ipcMain.handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: !!token, base: BASE }))
+ipcMain.handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: !!token, base: BASE, image: IMAGE, server: SERVER, hub: HUB }))
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)   // no native File/Edit/View menu — it means nothing for this app
