@@ -1,7 +1,7 @@
 // Milpa Desktop renderer. Talks only through window.milpa (preload bridge). The conversation is driven by
-// `coa agent` in the container; while it runs, the UI streams the session's events (tool calls, turns) by
-// polling the append-only stream live: the turn runs through `docker exec`, not a request a stream could
-// ride (php -S does stream SSE — greenhouse evidence/1035; see main.js at the stream handler).
+// `coa agent` in the container; while it runs, the UI streams the session's events (tool calls, turns). With a
+// hub on the backend (the FrankenPHP image) the hub rings on every fact and carries the model's reasoning as it
+// is written; without one the UI polls the append-only stream (greenhouse decisions/0508; main.js, milpa:subscribe).
 const $ = (s, r = document) => r.querySelector(s)
 const el = (t, p = {}) => Object.assign(document.createElement(t), p)
 const bridge = window.milpa
@@ -199,17 +199,37 @@ function renderGate (q) {
   $('#conv').append(c); scroll()
 }
 
-// ── drive + LIVE streaming (poll events while the agent runs) ────────────────────────────────────
+// ── drive + LIVE streaming (the hub rings, or the stream is polled, while the agent runs) ──────────
 // Each model call that reasons emits one `session.model_reasoned` with its full reasoning_content —
 // appended live into the collapsible trace, which folds it away when the turn resolves (cabo: stream then collapse).
-function appendReasoning (text) {
-  const t = (text || '').toString().trim(); if (!t) return
-  const host = $('#live-reasoning'); if (!host) return
+// With a hub, the same reasoning arrives FIRST as deltas while the model is still writing it: they grow one
+// provisional paragraph, which the stored fact replaces when it lands — the stream stays the truth.
+function kickReasoning (host) {
   if (!host.dataset.kicked) { host.dataset.kicked = '1'; host.append(html(`<p class="mui-section__kicker" style="margin:0 0 var(--space-1)">${tr('agent.reasoning')}</p>`)) }
+}
+function appendReasoning (text) {
+  const host = $('#live-reasoning'); if (!host) return
+  const draft = host.querySelector('.reasoning-draft'); if (draft) draft.remove()
+  const t = (text || '').toString().trim(); if (!t) return
+  kickReasoning(host)
   host.append(html(`<p class="dv-note" style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;margin:0 0 var(--space-2)">${clean(t)}</p>`))
   const m = $('#live-meta'); if (m) m.textContent = tr('agent.reasoningLive')
   scroll()
 }
+function appendReasoningDelta (delta) {
+  const d = (delta || '').toString(); if (!d) return
+  const host = $('#live-reasoning'); if (!host) return
+  kickReasoning(host)
+  let draft = host.querySelector('.reasoning-draft')
+  if (!draft) { draft = html('<p class="dv-note reasoning-draft" style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;margin:0 0 var(--space-2)"></p>'); host.append(draft) }
+  draft.textContent += d
+  const m = $('#live-meta'); if (m) m.textContent = tr('agent.reasoningLive')
+  scroll()
+}
+// One listener for the whole window: main forwards the hub's updates for the session being driven, and the
+// turn in flight (if any) takes them. Registered once, so turns never stack listeners.
+let onHub = null
+if (bridge && bridge.onHub) bridge.onHub(m => { if (onHub) onHub(m) })
 function startBusy () { sending = true; const b = $('#send'); if (b) { b.disabled = false; b.dataset.stop = '1'; b.textContent = tr('send.stop') } }
 function endBusy () { sending = false; const b = $('#send'); if (b) { b.disabled = false; delete b.dataset.stop; b.textContent = tr('send.button') } }
 async function stopAgent () {
@@ -241,7 +261,7 @@ async function send (forced) {
   // to Decisiones (greenhouse decisions/0132). This is driven by the event stream, NOT by drive resolving.
   const onParked = async () => {
     if (parked) return; parked = true
-    clearInterval(poll)
+    onHub = null; if (poll) { clearInterval(poll); poll = null }
     const { meta, ans } = finalize()
     if (meta) meta.textContent = tr('agent.parked')
     if (ans) ans.innerHTML = md(tr('conv.parkedNote'))
@@ -249,20 +269,42 @@ async function send (forced) {
     await refreshShow()   // renders the gate (renderGate), the session badge and the Decisiones badge
     scroll(); endBusy()
   }
-  const poll = setInterval(async () => {
+  // Read what the stream holds past `seen`, once. Reads are chained so a doorbell that rings while one is in
+  // flight never paints the same fact twice.
+  let reading = Promise.resolve()
+  const readOnce = async () => {
+    if (parked) return
     const { events } = await bridge.events(current, seen); if (!events.length) return
     for (const e of events) {
+      seen++
       if (e.type === 'session.tool_called') $('#live-tools')?.append(toolCard(e.payload))
       else if (e.type === 'session.model_called') { const m = $('#live-meta'); if (m) m.textContent = tr('agent.thinking', { model: e.payload.model || '' }) }
       else if (e.type === 'session.model_reasoned') appendReasoning(e.payload && e.payload.reasoning)
       else if (e.type === 'session.debt_signaled') refreshDebt()
       else if (e.type === 'session.question_asked') { await onParked(); return }
     }
-    seen += events.length; scroll()
-  }, 1200)
+    scroll()
+  }
+  const read = () => { reading = reading.then(readOnce).catch(() => {}); return reading }
+  // PUSHED when the backend has a hub: every stored fact rings (and the stream is read), reasoning arrives as it
+  // is written. POLLED when it has none, or the hub went away mid-turn — the floor, never both at once.
+  let poll = null
+  const startPolling = () => { if (!poll && !parked) poll = setInterval(read, 1200) }
+  const sub = bridge.subscribe ? await bridge.subscribe(current).catch(() => null) : null
+  if (sub && sub.live) {
+    const session = current
+    onHub = (m) => {
+      if (!m || m.session !== session || parked) return
+      if (m.closed) { onHub = null; startPolling(); read(); return }
+      const u = m.update
+      if (u && u.kind === 'reasoning') appendReasoningDelta(u.reasoning && u.reasoning.delta)
+      else read()   // a fact was stored (or the hub reconnected and may have missed some): read the stream
+    }
+  } else startPolling()
   const res = await bridge.drive(q, current, autonomyDefault())
-  if (parked) return   // the poll already surfaced the parked-on-question state; don't clobber it
-  clearInterval(poll)
+  onHub = null; if (poll) { clearInterval(poll); poll = null }
+  if (!parked) await read()   // what the stream holds past the last ring: the turn's closing facts
+  if (parked) return   // the stream already surfaced the parked-on-question state; don't clobber it
   const { meta, ans } = finalize()
   if (res && res.ok !== false) {
     await refreshShow()

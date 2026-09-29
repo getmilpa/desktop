@@ -29,6 +29,11 @@ contextBridge.exposeInMainWorld('milpa', {
   declareRole: (input) => ipcRenderer.invoke('milpa:declareRole', input),
   enableCapability: (capability) => ipcRenderer.invoke('milpa:enableCapability', capability),
   events: (session, since) => ipcRenderer.invoke('milpa:events', { session, since }),
+  // The hub (greenhouse decisions/0508): subscribe to ONE session's pushed updates. `{ live: false }` means this
+  // backend has no hub and the renderer polls `events`; with one, each update arrives through `onHub`.
+  subscribe: (session) => ipcRenderer.invoke('milpa:subscribe', { session }),
+  unsubscribe: () => ipcRenderer.invoke('milpa:unsubscribe'),
+  onHub: (cb) => { ipcRenderer.on('milpa:hub', (_e, m) => cb(m)) },
   // whether a driving agent run is live in the container — the renderer flags an INTERRUPTED prior run with this
   agentRunning: () => ipcRenderer.invoke('milpa:agentRunning'),
   stopAgent: () => ipcRenderer.invoke('milpa:stopAgent'),
