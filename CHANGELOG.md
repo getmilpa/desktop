@@ -5,6 +5,9 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+### Fixed
+- Passkeys on houses with milpa/auth ≥ 0.11 (app-runtime ≥ 0.201): the house only admits ceremonies from the origins it knows, and the Desktop's port (8899, or `MILPA_PORT`) was none of them — `http://localhost:8000` is what a house declares or derives — so the passkey window's registration and sign-in answered 401 (greenhouse evidence/1068). The container now starts with `MILPA_PASSKEY_ORIGINS=http://localhost:<port>`, the origin the passkey window opens at; the house adds it to its own from the app-runtime release that carries getmilpa/app-runtime#663 (greenhouse decisions/0534); older runtimes ignore the variable, so on them the window is still refused.
+
 ### Added
 - The hub instead of the poll (greenhouse decisions/0508): by default the shell runs `ghcr.io/getmilpa/framework:dev-frankenphp` — the same app served by FrankenPHP classic, with its Mercure hub on the app's own port — keeping the image's own entrypoint, and subscribes to the driven session's topic (`milpa/sessions/<id>`). The model's reasoning streams into the bubble while it is being written; every other update rings one read of the session stream, which stays the truth. The subscriber JWT is signed inside the container for that one topic, so the key never leaves it. New `milpa:subscribe` / `milpa:unsubscribe` IPC and `window.milpa.subscribe` / `onHub`. `milpa:status` reports `image`, `server` and `hub`.
 - Fallback floor: when the variant cannot be had, the plain `ghcr.io/getmilpa/framework:dev` runs under `php -S` with `PHP_CLI_SERVER_WORKERS=8`, and the renderer polls as before; if the hub drops mid-turn, main retries three times and the renderer falls back to polling. Which server runs is read from the image (its entrypoint), not from its tag; the hub is probed by what it answers, not assumed.

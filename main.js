@@ -48,6 +48,11 @@ let HUB = false        // whether the backend answers as a Mercure hub on its ow
 const NAME = 'milpa-desktop-backend'
 const HOST_PORT = process.env.MILPA_PORT || '8899'
 const BASE = `http://127.0.0.1:${HOST_PORT}`
+// THE ADDRESS BAR THE PASSKEY WINDOW SHOWS (greenhouse decisions/0534). milpa/auth 0.11 holds every ceremony to the
+// origins the house admits, and neither what config/app.php declares nor what the house derives (http://localhost:8000)
+// is the port the Desktop chose — so its passkey window was refused (evidence/1068). The Desktop is the process that
+// serves the house here and the only one that knows this address; it declares it to the house, never the request.
+const PASSKEY_ORIGIN = `http://localhost:${HOST_PORT}`
 const MODEL = { base: process.env.MILPA_AGENT_BASE_URL || 'http://llama.local:11438', name: process.env.MILPA_AGENT_MODEL || 'qwen3.8-27b' }
 // The model's declared context budget, handed to the backend so the Compactor fits the WHOLE window
 // by construction (app-runtime >=0.95). 24576 and not 32768: the Desktop's outside share (59 tool
@@ -100,7 +105,7 @@ async function startBackend () {
   const serve = SERVER === 'frankenphp'
     ? [IMAGE]
     : ['-e', 'PHP_CLI_SERVER_WORKERS=8', IMAGE, 'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php']
-  sh('docker', ['run', '-d', '--name', NAME, ...net, '-e', `PORT=${HOST_PORT}`, ...modelEnv, ...mounts, ...serve])
+  sh('docker', ['run', '-d', '--name', NAME, ...net, '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, ...modelEnv, ...mounts, ...serve])
   for (let i = 0; i < 40; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 800)) }
   HUB = await probeHub()
   // The live door is governed: an action needs a milpa:component:<name>:<action> scope, and the
@@ -144,8 +149,9 @@ ipcMain.handle('milpa:api', async (_e, p) => {
 // uses, so the served page (/webauthn/enroll, /webauthn/intent) runs `navigator.credentials.*` at a
 // real origin with rpId `localhost`, shows the human the operation, and posts the assertion back to the
 // backend that verifies it. The window is a child of the main one and holds no privilege of its own.
+// That window's origin is PASSKEY_ORIGIN, the one startBackend() declared to the house.
 ipcMain.handle('milpa:passkey', async (_e, { kind, session: sid, operation, args } = {}) => {
-  const base = `http://localhost:${HOST_PORT}`
+  const base = PASSKEY_ORIGIN
   let url
   if (kind === 'intent') {
     const q = new URLSearchParams({ operation: String(operation || ''), arguments: JSON.stringify(args || {}), session: String(sid || '') })
