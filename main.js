@@ -43,8 +43,7 @@ const IS_MAC = process.platform === 'darwin'
 // polling. When that tag cannot be had — not pulled yet and no network, or not published yet — the plain `:dev`
 // still runs, under `php -S` with several workers, and the renderer polls as before. MILPA_IMAGE names one image
 // and skips the choice; which server it gets is read from the image, not from its name.
-const IMAGE_PREFERRED = 'ghcr.io/getmilpa/framework:dev-frankenphp'
-const IMAGE_FLOOR = 'ghcr.io/getmilpa/framework:dev'
+const { chooseImage, IMAGE_PREFERRED } = require('./choose-image.js')
 let IMAGE = process.env.MILPA_IMAGE || IMAGE_PREFERRED
 let SERVER = 'php-s'   // or 'frankenphp' — read from the image in startBackend()
 let HUB = false        // whether the backend answers as a Mercure hub on its own port — probed, not assumed
@@ -133,16 +132,6 @@ async function startBackend () {
 // Whether the house serves its panel yet: a fresh house has none until `capabilities:enable milpa/admin` (404).
 async function panelServed () {
   try { const r = await fetch(PANEL_URL, { redirect: 'manual', signal: AbortSignal.timeout(3000) }); try { await r.body?.cancel() } catch {} return r.status !== 404 && r.status < 500 } catch { return false }
-}
-// Which image this launch runs: the one MILPA_IMAGE names, else the FrankenPHP variant if it is here or can be
-// pulled, else the plain one. A failed pull is not an error — it is the fallback.
-function chooseImage () {
-  if (process.env.MILPA_IMAGE) return process.env.MILPA_IMAGE
-  for (const img of [IMAGE_PREFERRED, IMAGE_FLOOR]) {
-    try { sh('docker', ['image', 'inspect', img], { stdio: 'ignore' }); return img } catch {}
-    try { sh('docker', ['pull', '--quiet', img], { stdio: 'ignore' }); return img } catch {}
-  }
-  return IMAGE_FLOOR
 }
 // Read from the image, not its tag: the FrankenPHP variant's entrypoint is `milpa-frankenphp` (greenhouse
 // docker/milpa-dev-frankenphp.Dockerfile). Anything else is served by `php -S`.
