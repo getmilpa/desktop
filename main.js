@@ -1,12 +1,15 @@
-// Milpa Desktop — the Electron host. The renderer is a local milpa-designed UI; the backend is a milpa
-// app in a Docker container. This main process owns what the renderer must never touch:
+// Milpa Desktop — the Electron host. The backend is a milpa app in a Docker container; the window is that house's
+// own panel. This main process owns what the page must never touch:
 //   1. the container lifecycle       — `docker run` on ready, stop on quit;
-//   2. the credential                — mint a Bearer via `coa token:new`, hold it here, inject it into
-//                                       every request to the backend (the renderer stays credential-free);
+//   2. the window                    — a local boot screen while the house comes up, then the house's panel at the
+//                                       origin the Desktop declared to it (greenhouse evidence/1091, E3);
 //   3. driving the agent             — run `coa agent <query>` in the container against the configured model.
-// The board's data is a session's private facts and is scope-protected (greenhouse evidence/0366-0370): the
-// desktop host authenticates on the user's behalf. Model defaults to the local qwen (CLAUDE.md), overridable.
-const { app, BrowserWindow, session, ipcMain, Menu, dialog, net } = require('electron')
+// THE DESKTOP HOLDS NO CREDENTIAL. It used to mint a Bearer with an unsigned `coa token:new --scopes=*` on every start;
+// since decisions/0522 an unsigned call that changes something lasting is refused, so the token was null, the window
+// never left «bringing the runtime up», and there was no passkey window and no hub (evidence/1091). Signing that mint
+// would cost a signature on every launch for a credential nobody should hold. The person signs in to the panel with
+// their passkey, in this window, and the house judges every call as theirs. Model defaults to the local qwen, overridable.
+const { app, BrowserWindow, ipcMain, Menu, dialog, net, shell } = require('electron')
 
 // Native Wayland when the session is Wayland — XWayland's compositing can leave stale repaints (the
 // conversation bleeding over the header/inspector). `ozone-platform-hint=auto` picks Wayland when it
@@ -46,7 +49,14 @@ let IMAGE = process.env.MILPA_IMAGE || IMAGE_PREFERRED
 let SERVER = 'php-s'   // or 'frankenphp' — read from the image in startBackend()
 let HUB = false        // whether the backend answers as a Mercure hub on its own port — probed, not assumed
 let TRIAL = false      // whether the house can confine a seat's trial — asked of the house, not assumed
-const NAME = 'milpa-desktop-backend'
+// The container's name. A lab running beside another Desktop names its own; everyone else keeps the default.
+const NAME = process.env.MILPA_BACKEND || 'milpa-desktop-backend'
+// HOW A PERSON REACHES THE HOUSE'S TERMINAL FROM THIS MACHINE (greenhouse evidence/1091, E5). The house prints the
+// commands it hands a person — the seat's `identity:accept`, the hints to continue or to answer — as `php bin/coa …`,
+// which only runs inside the container. The Desktop is the process that knows the house is in one, so it declares the
+// way in (MILPA_CLI_PREFIX, app-runtime Capabilities::cli()) and the house prints every command with it; `-it` because
+// a person types them, and a smartcard's PIN needs a terminal.
+const TERMINAL = `docker exec -it ${NAME}`
 const HOST_PORT = process.env.MILPA_PORT || '8899'
 const BASE = `http://127.0.0.1:${HOST_PORT}`
 // THE ADDRESS BAR THE PASSKEY WINDOW SHOWS (greenhouse decisions/0534). milpa/auth 0.11 holds every ceremony to the
@@ -55,13 +65,21 @@ const BASE = `http://127.0.0.1:${HOST_PORT}`
 // serves the house here and the only one that knows this address; it declares it to the house, never the request.
 const PASSKEY_ORIGIN = `http://localhost:${HOST_PORT}`
 const MODEL = { base: process.env.MILPA_AGENT_BASE_URL || 'http://llama.local:11438', name: process.env.MILPA_AGENT_MODEL || 'qwen3.8-27b' }
-// The model's declared context budget, handed to the backend so the Compactor fits the WHOLE window
-// by construction (app-runtime >=0.95). 24576 and not 32768: the Desktop's outside share (59 tool
-// schemas + system) is fatter than a bare cattle app's, so the composed target must leave real
-// headroom — measured the hard way when an unbudgeted session died at 37k against qwen's 32.7k.
-// Override via MILPA_AGENT_CONTEXT_TOKENS for bigger models.
-const CTX = process.env.MILPA_AGENT_CONTEXT_TOKENS || '24576'
-let token = null
+// THE MODEL'S WINDOW IS THE HOUSE'S TO MEASURE (greenhouse evidence/1091, E2). The Desktop used to declare 24576 —
+// a qwen-32k minus its tool share — on every `docker run` and every drive, and the house obeys a declared window over
+// the one it measures: with the model at 49,152 the first two legs died in `context_budget_exhausted`. Now the Desktop
+// declares a window only when the operator names one (MILPA_AGENT_CONTEXT_TOKENS); otherwise it says nothing and the
+// house asks the model.
+const CTX = process.env.MILPA_AGENT_CONTEXT_TOKENS || ''
+const ctxEnv = () => CTX ? ['-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`] : []
+// The panel the window opens once the house answers (milpa/admin), through its sign-in: the passkey sign-in is a
+// session cookie, so it ends with the window, and a panel opened with nobody signed in offers no way in (there is no
+// address bar here). One touch of the passkey per launch — never a gpg signature.
+const PANEL_URL = `${PASSKEY_ORIGIN}/milpa/admin`
+const SIGNIN_URL = `${PASSKEY_ORIGIN}/webauthn/signin?next=${encodeURIComponent('/milpa/admin')}`
+// What the window shows while it is not the panel yet — read by the boot screen through `milpa:boot`.
+const BOOT = { phase: 'starting', error: null, panel: false }
+let win = null
 const VERSION = require('./package.json').version
 
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', ...opts }).trim()
@@ -81,8 +99,6 @@ async function startBackend () {
         try { SERVER = serverOf(sh('docker', ['inspect', '--format', '{{.Config.Image}}', NAME])) } catch {}
         HUB = await probeHub()
         TRIAL = probeTrial()
-        try { const out = sh('docker', ['exec', NAME, 'php', 'bin/coa', 'token:new', '--actor=desktop', '--scopes=*', '--scopes=milpa:component:data-table:*', '--scopes=milpa:component:autocomplete:*', '--scopes=milpa:component:metric-card:*', '--scopes=milpa:component:state-machine:*', '--scopes=milpa:component:dashboard-grid:*', '--scopes=milpa:component:input:*', '--scopes=milpa:component:select:*', '--scopes=milpa:component:checkbox:*', '--scopes=milpa:component:textarea:*', '--scopes=agent:read', '--scopes=agent:answer', '--scopes=agent:run'])
-              const m = out.match(/^token:\s*(\S+)/m); token = m ? m[1] : null } catch {}
         return
       }
     } catch {}
@@ -100,22 +116,23 @@ async function startBackend () {
   const net = IS_MAC ? ['-p', `${HOST_PORT}:${HOST_PORT}`] : ['--network', 'host']
   // The model config goes on the CONTAINER (not just per docker-exec), so the agent web door
   // (POST /agent over HTTP, greenhouse decisions/0155) reaches the local model too.
-  const modelEnv = ['-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', '-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`]
+  const modelEnv = ['-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', ...ctxEnv()]
   // FrankenPHP keeps the image's own entrypoint and command: they read PORT, and the entrypoint is what tells the
   // app its server is its hub. `php -S` replaces the command, and gets several workers so a long request (a
   // stream, a turn) does not hold the next one (decisions/0504) — set here too, for an image that predates the ENV.
   const serve = SERVER === 'frankenphp'
     ? [IMAGE]
     : ['-e', 'PHP_CLI_SERVER_WORKERS=8', IMAGE, 'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php']
-  sh('docker', ['run', '-d', '--name', NAME, ...net, ...trialSeccomp(IMAGE), '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, ...modelEnv, ...mounts, ...serve])
-  for (let i = 0; i < 40; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 800)) }
+  sh('docker', ['run', '-d', '--name', NAME, ...net, ...trialSeccomp(IMAGE), '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, '-e', `MILPA_CLI_PREFIX=${TERMINAL}`, ...modelEnv, ...mounts, ...serve])
+  let answered = false
+  for (let i = 0; i < 40 && !answered; i++) { try { const r = await fetch(`${BASE}/`); answered = r.status < 500 } catch {} if (!answered) await new Promise(r => setTimeout(r, 800)) }
+  if (!answered) throw new Error(`the house did not answer on ${BASE} — docker logs ${NAME}`)
   HUB = await probeHub()
   TRIAL = probeTrial()
-  // The live door is governed: an action needs a milpa:component:<name>:<action> scope, and the
-  // component segment is NOT covered by '*' (greenhouse decisions/0149). Grant the hosted components
-  // explicitly so a hosted component's actions round-trip.
-  try { const out = sh('docker', ['exec', NAME, 'php', 'bin/coa', 'token:new', '--actor=desktop', '--scopes=*', '--scopes=milpa:component:data-table:*', '--scopes=milpa:component:autocomplete:*', '--scopes=milpa:component:metric-card:*', '--scopes=milpa:component:state-machine:*', '--scopes=milpa:component:dashboard-grid:*', '--scopes=milpa:component:input:*', '--scopes=milpa:component:select:*', '--scopes=milpa:component:checkbox:*', '--scopes=milpa:component:textarea:*', '--scopes=agent:read', '--scopes=agent:answer', '--scopes=agent:run'])
-        const m = out.match(/^token:\s*(\S+)/m); token = m ? m[1] : null } catch {}
+}
+// Whether the house serves its panel yet: a fresh house has none until `capabilities:enable milpa/admin` (404).
+async function panelServed () {
+  try { const r = await fetch(PANEL_URL, { redirect: 'manual', signal: AbortSignal.timeout(3000) }); try { await r.body?.cancel() } catch {} return r.status !== 404 && r.status < 500 } catch { return false }
 }
 // Which image this launch runs: the one MILPA_IMAGE names, else the FrankenPHP variant if it is here or can be
 // pulled, else the plain one. A failed pull is not an error — it is the fallback.
@@ -161,8 +178,13 @@ function probeTrial () {
 function stopBackend () { if (process.env.MILPA_KEEP_BACKEND === '1') return; try { sh('docker', ['rm', '-f', NAME]) } catch {} }
 
 // ── IPC: the narrow bridge the preload exposes ─────────────────────────────────────────────────
-ipcMain.handle('milpa:api', async (_e, p) => {
-  try { const r = await fetch(`${BASE}${p}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+// ONLY THE DESKTOP'S OWN PAGES MAY CALL IT. The window shows the house's panel — a page served over http that also
+// shows what a resident built — and this bridge runs docker and gpg. The preload exposes nothing to an http page;
+// this is the second lock: a call whose frame is not a file:// page of this app is refused before its handler runs.
+const ownPage = (e) => { try { return new URL(e.senderFrame.url).protocol === 'file:' } catch { return false } }
+const handle = (channel, fn) => ipcMain.handle(channel, (e, ...args) => ownPage(e) ? fn(e, ...args) : { ok: false, error: 'refused: not a page of this Desktop' })
+handle('milpa:api', async (_e, p) => {
+  try { const r = await fetch(`${BASE}${p}`)
         const text = await r.text(); try { return { ok: r.ok, status: r.status, json: JSON.parse(text) } } catch { return { ok: r.ok, status: r.status, text } } }
   catch (e) { return { ok: false, error: String(e) } }
 })
@@ -174,7 +196,7 @@ ipcMain.handle('milpa:api', async (_e, p) => {
 // real origin with rpId `localhost`, shows the human the operation, and posts the assertion back to the
 // backend that verifies it. The window is a child of the main one and holds no privilege of its own.
 // That window's origin is PASSKEY_ORIGIN, the one startBackend() declared to the house.
-ipcMain.handle('milpa:passkey', async (_e, { kind, session: sid, operation, args } = {}) => {
+handle('milpa:passkey', async (_e, { kind, session: sid, operation, args } = {}) => {
   const base = PASSKEY_ORIGIN
   let url
   if (kind === 'intent') {
@@ -201,7 +223,7 @@ ipcMain.handle('milpa:passkey', async (_e, { kind, session: sid, operation, args
 // channel to the agent, and is the honest mode once the container always exposes the door.
 const AGENT_HTTP_ONLY = !!process.env.MILPA_AGENT_HTTP_ONLY
 async function agentHttp (method, path, body) {
-  const headers = Object.assign({ Accept: 'application/json' }, token ? { Authorization: `Bearer ${token}` } : {})
+  const headers = { Accept: 'application/json' }
   if (body) headers['Content-Type'] = 'application/json'
   // Chromium's net.fetch, NOT Node's: undici's default headersTimeout (~5 min) aborted long agent
   // drives mid-run — a 12-step qwen turn at a 27k window takes longer than that — and the abort both
@@ -213,7 +235,7 @@ async function agentHttp (method, path, body) {
   const data = await r.json().catch(() => null)
   return { status: r.status, data }
 }
-ipcMain.handle('milpa:drive', async (_e, { query, session: sid, mode }) => {
+handle('milpa:drive', async (_e, { query, session: sid, mode }) => {
   const s = sid || 'default'
   // Default autonomy is `auto` (Rod, 2026-09-02): a fresh session continues without pausing on every
   // mutation. The gate still stops for signatures and underdetermined intent server-side — this only
@@ -236,14 +258,14 @@ ipcMain.handle('milpa:drive', async (_e, { query, session: sid, mode }) => {
   }
   // the drive path: docker exec (no client deadline can kill a live run)
   const { err, out } = await exec('docker',
-    ['exec', '-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', '-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`,
+    ['exec', '-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', ...ctxEnv(),
      NAME, 'php', 'bin/coa', 'agent', query, `--session=${s}`, `--mode=${m}`, '--json'])
   let doc = null; try { doc = JSON.parse(out.trim().split('\n').filter(Boolean).pop()) } catch {}
   if (doc) { const r = (doc && doc.result) ? doc.result : doc; return { ok: r.ok !== false && !err, session: s, answer: r.answer, steps: r.steps, tools: r.tools, closure: r.closure, error: r.error } }
   const grab = (k) => (out.match(new RegExp(`^${k}:\\s*([\\s\\S]*?)(?=\\n\\w+:|$)`, 'm')) || [])[1]?.trim()
   return { ok: !err, session: s, answer: grab('answer'), steps: grab('steps'), tools: grab('tools'), raw: out.slice(-4000) }
 })
-ipcMain.handle('milpa:answer', async (_e, { session: sid, decision }) => {
+handle('milpa:answer', async (_e, { session: sid, decision }) => {
   try {
     const { status, data } = await agentHttp('POST', '/agent/answer', { session: sid, answer: decision })
     if (status !== 404) return { ok: status < 300, out: JSON.stringify(data) }
@@ -252,7 +274,7 @@ ipcMain.handle('milpa:answer', async (_e, { session: sid, decision }) => {
   const { err, out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'agent:answer', `--session=${sid}`, `--answer=${decision}`, '--json'])
   return { ok: !err, out }
 })
-ipcMain.handle('milpa:show', async (_e, sid) => {
+handle('milpa:show', async (_e, sid) => {
   const s = sid || 'default'
   try {
     const { status, data } = await agentHttp('GET', `/agent/show?session=${encodeURIComponent(s)}`)
@@ -269,13 +291,13 @@ ipcMain.handle('milpa:show', async (_e, sid) => {
 // Host a Milpa live web component: the container renders it framework-side (a signed <milpa-state> envelope +
 // Alpine markup) and the shell hosts the HTML — a Desktop screen authored the Milpa way, not hand-written here
 // (greenhouse decisions/0142). The per-app component route is wired by the container's live-web surface.
-ipcMain.handle('milpa:component', async (_e, name) => {
+handle('milpa:component', async (_e, name) => {
   const n = encodeURIComponent(String(name || 'data-table'))
   // The framework's live door (milpa/app-runtime LivePlugin) serves the interactive render path at
   // GET /live/page?component=<name> — the page is born bound to this actor and immediately actionable
   // over POST /live (greenhouse decisions/0149, evidence/0412).
   try {
-    const r = await fetch(`${BASE}/live/page?component=${n}`, token ? { headers: { Authorization: `Bearer ${token}` } } : {})
+    const r = await fetch(`${BASE}/live/page?component=${n}`)
     if (r.ok) return { ok: true, html: await r.text() }
   } catch {}
   return { ok: false, error: 'live component surface not wired to this container (needs milpa/live-web + LivePlugin + a LivePageProvider)' }
@@ -283,12 +305,12 @@ ipcMain.handle('milpa:component', async (_e, name) => {
 // The bridge transport for a hosted live component: proxy the remote runtime's action POST to the
 // container's live endpoint. The renderer's page is file://, so it cannot fetch the backend directly;
 // main can. Returns { status, data } — exactly what window.MilpaLive.transport must resolve to.
-ipcMain.handle('milpa:live', async (_e, { endpoint, body }) => {
+handle('milpa:live', async (_e, { endpoint, body }) => {
   const url = /^https?:/.test(String(endpoint || '')) ? endpoint : `${BASE}${endpoint || '/live'}`
   try {
     const r = await fetch(url, {
       method: 'POST',
-      headers: Object.assign({ 'Content-Type': 'application/json', Accept: 'application/json' }, token ? { Authorization: `Bearer ${token}` } : {}),
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body || {}),
     })
     let data = null; try { data = await r.json() } catch {}
@@ -297,19 +319,19 @@ ipcMain.handle('milpa:live', async (_e, { endpoint, body }) => {
     return { status: 0, data: { error: 'live endpoint unreachable: ' + String(e && e.message || e) } }
   }
 })
-ipcMain.handle('milpa:stopAgent', async () => {
+handle('milpa:stopAgent', async () => {
   // Interrupt an in-flight run so the user can steer with fresh context. Each turn is already persisted,
   // so killing the exec stops the loop without losing the work — Continue resumes from the last fact.
   try { await exec('docker', ['exec', NAME, 'pkill', '-f', 'bin/coa agent']) } catch {}
   return { ok: true }
 })
-ipcMain.handle('milpa:agentRunning', async () => {
+handle('milpa:agentRunning', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'sh', '-c', "pgrep -f 'coa agent .*--mode=' >/dev/null 2>&1 && echo yes || echo no"])
   return { running: /yes/.test(out) }
 })
 // Who the house recognizes as this session's owner right now — re-verified live by the backend
 // (coa session:owner). The renderer PROJECTS this fact; it never decides it (greenhouse decisions/0120).
-ipcMain.handle('milpa:owner', async (_e, sid) => {
+handle('milpa:owner', async (_e, sid) => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'session:owner', `--session=${sid || 'default'}`, '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false } }
 })
@@ -320,7 +342,7 @@ ipcMain.handle('milpa:owner', async (_e, sid) => {
 // Save an audit export the renderer composed. The renderer owns the FORMAT (categorising the stream,
 // weighing each component); the main process only owns the file — a Save dialog, then a write. The
 // content never leaves the host.
-ipcMain.handle('milpa:saveExport', async (_e, { name, content } = {}) => {
+handle('milpa:saveExport', async (_e, { name, content } = {}) => {
   try {
     const safe = String(name || 'milpa-session').replace(/[^\w.-]/g, '_')
     const res = await dialog.showSaveDialog({
@@ -336,7 +358,7 @@ ipcMain.handle('milpa:saveExport', async (_e, { name, content } = {}) => {
   }
 })
 
-ipcMain.handle('milpa:events', async (_e, { session: sid, since }) => {
+handle('milpa:events', async (_e, { session: sid, since }) => {
   const stream = 'agent-session:' + (sid || 'default')
   const { out } = await exec('docker', ['exec', NAME, 'sh', '-c',
     `grep -F '${stream.replace(/'/g, '')}' var/agent-sessions.jsonl 2>/dev/null || true`])
@@ -395,7 +417,7 @@ function openHub (sid, jwt, attempt) {
   }
   return sub
 }
-ipcMain.handle('milpa:subscribe', async (_e, { session: sid } = {}) => {
+handle('milpa:subscribe', async (_e, { session: sid } = {}) => {
   const s = String(sid || 'default')
   if (!/^[A-Za-z0-9._-]{1,128}$/.test(s)) return { live: false, reason: 'session id is not a topic' }
   if (!HUB) return { live: false, reason: 'no hub on this backend', server: SERVER }
@@ -407,12 +429,12 @@ ipcMain.handle('milpa:subscribe', async (_e, { session: sid } = {}) => {
   hubSub = openHub(s, jwt, 0)
   return { live: true, session: s }
 })
-ipcMain.handle('milpa:unsubscribe', async () => { closeHub(); return { ok: true } })
+handle('milpa:unsubscribe', async () => { closeHub(); return { ok: true } })
 
 // ── identity / key custody (greenhouse decisions/0121) ──────────────────────────────────────────
 // gpg runs INSIDE the container, but over the mounted host GNUPGHOME — so keys live on the host, never
 // in the ephemeral backend. `keys` also reports whether a YubiKey/smartcard is reachable (card custody).
-ipcMain.handle('milpa:keys', async () => {
+handle('milpa:keys', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'gpg', '--list-secret-keys', '--with-colons'])
   const keys = []; let fpr = null
   for (const l of (out || '').split('\n')) {
@@ -426,7 +448,7 @@ ipcMain.handle('milpa:keys', async () => {
 })
 // «Crear claves»: generate a software gpg key in the mounted GNUPGHOME (persists on the host), and make
 // it the default signing key so `--sign` finds it without a key id.
-ipcMain.handle('milpa:keygen', async (_e, { name, email } = {}) => {
+handle('milpa:keygen', async (_e, { name, email } = {}) => {
   const real = (name || 'Milpa Operator').replace(/[\r\n"]/g, '')
   const mail = (email || 'operator@milpa.local').replace(/[\r\n"]/g, '')
   const params = `%no-protection\nKey-Type: eddsa\nKey-Curve: ed25519\nKey-Usage: sign\nName-Real: ${real}\nName-Email: ${mail}\nExpire-Date: 0\n%commit\n`
@@ -440,7 +462,7 @@ ipcMain.handle('milpa:keygen', async (_e, { name, email } = {}) => {
 })
 // Run a signed identity operation (identity:bootstrap / identity:enroll / identity:revoke / session:own).
 // The signature happens in the container over the mounted keys; the renderer only names the op and args.
-ipcMain.handle('milpa:signOp', async (_e, { op, args } = {}) => {
+handle('milpa:signOp', async (_e, { op, args } = {}) => {
   const allow = ['identity:bootstrap', 'identity:enroll', 'identity:revoke', 'session:own']
   if (!allow.includes(op)) return { ok: false, error: `refused: ${op} is not a signable identity op` }
   const flags = []
@@ -452,23 +474,23 @@ ipcMain.handle('milpa:signOp', async (_e, { op, args } = {}) => {
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: !err, raw: (out || String(err)).slice(-2000) } }
 })
 // ── capabilities: what the app can do, and enabling more (a signed, app-changing act) ────────────
-ipcMain.handle('milpa:capabilities', async () => {
+handle('milpa:capabilities', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'capabilities', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false } }
 })
-ipcMain.handle('milpa:skills', async () => {
+handle('milpa:skills', async () => {
   // The skills this app carries, projected by the governed read `skill:list`. The renderer shows
   // them; it never reads the filesystem or decides invocation — the backend owns that (decisions/0172).
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'skill:list', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, skills: [] } }
 })
-ipcMain.handle('milpa:roles', async () => {
+handle('milpa:roles', async () => {
   // The specialist agent roles this app declares, projected by `agent:role:list`. The renderer shows
   // each role with the skills it preloads; the backend owns the roles, the renderer only projects.
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'agent:role:list', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, roles: [] } }
 })
-ipcMain.handle('milpa:catalogue', async () => {
+handle('milpa:catalogue', async () => {
   // The op catalogue an agent receives from this app, each tool carrying its DECLARED effect
   // (mutating, requiresConfirmation, effects). The tool cards read the mutation from HERE — the
   // authoritative declaration — instead of guessing it from the tool name (a read op like
@@ -477,7 +499,7 @@ ipcMain.handle('milpa:catalogue', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'agent:catalogue', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, tools: [] } }
 })
-ipcMain.handle('milpa:declareRole', async (_e, input) => {
+handle('milpa:declareRole', async (_e, input) => {
   // Compose a specialist agent through the governed operation `agent:role:declare`. The human runs it
   // directly (the terminal is the honest, ungated channel); it writes .milpa/agents/<name>.md.
   const i = input || {}
@@ -489,27 +511,67 @@ ipcMain.handle('milpa:declareRole', async (_e, input) => {
   const { out } = await exec('docker', args)
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: false, error: 'declare failed' } }
 })
-ipcMain.handle('milpa:enableCapability', async (_e, capability) => {
+handle('milpa:enableCapability', async (_e, capability) => {
   const cap = String(capability || '').replace(/[^a-zA-Z0-9/_.-]/g, '')
   if (!cap) return { ok: false, error: 'bad capability' }
   const { err, out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'capabilities:enable', `--capability=${cap}`, '--sign', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: !err, raw: (out || String(err)).slice(-2000) } }
 })
-ipcMain.handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: !!token, base: BASE, image: IMAGE, server: SERVER, hub: HUB, trial: TRIAL }))
+handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: BOOT.phase === 'up', base: BASE, image: IMAGE, server: SERVER, hub: HUB, trial: TRIAL }))
+
+// ── the window: the boot screen, then the house's panel (greenhouse evidence/1091, E3) ─────────────────────────────
+// What the boot screen reads: where the house is, whether it serves its panel yet, and the two commands that give it
+// one — printed with the `docker exec` they are typed with here (E5), because the boot screen is the Desktop's own page.
+handle('milpa:boot', async () => {
+  if (BOOT.phase === 'up' && !BOOT.panel) BOOT.panel = await panelServed()
+  const run = `${TERMINAL} php bin/coa`
+  return {
+    ...BOOT, origin: PASSKEY_ORIGIN, panelUrl: SIGNIN_URL, container: BOOT.phase === 'starting' ? null : NAME, image: IMAGE, server: SERVER,
+    commands: { found: `${run} foundation:found --domain="…" --objective="…" --sign`, panel: `${run} capabilities:enable milpa/admin --sign` },
+  }
+})
+// Open a link of THIS house in the window — the one-time link the panel's enablement printed, or the panel itself.
+// Any other origin is refused here, whatever the boot screen already said.
+handle('milpa:openInWindow', async (_e, url) => {
+  let target = null
+  try { target = new URL(String(url || '')) } catch {}
+  if (!target || target.origin !== PASSKEY_ORIGIN) return { ok: false, error: `refused: not a link of this house (${PASSKEY_ORIGIN})` }
+  BOOT.phase = 'opening'
+  win.loadURL(target.href)
+  return { ok: true }
+})
+// The window stays on this house. A link elsewhere (a resident's blog post linking out, a doc) opens in the person's
+// browser; a popup of this house opens as a child window, an http page the bridge is never exposed to.
+function keepOnTheHouse (w) {
+  const ours = (u) => { try { const o = new URL(u); return o.origin === PASSKEY_ORIGIN || o.protocol === 'file:' } catch { return false } }
+  w.webContents.on('will-navigate', (e, u) => { if (!ours(u)) { e.preventDefault(); shell.openExternal(u) } })
+  w.webContents.setWindowOpenHandler(({ url: u }) => {
+    if (!ours(u)) { shell.openExternal(u); return { action: 'deny' } }
+    return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true } }
+  })
+}
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)   // no native File/Edit/View menu — it means nothing for this app
-  await startBackend()
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, cb) => {
-    if (token && details.url.startsWith(BASE)) details.requestHeaders['Authorization'] = `Bearer ${token}`
-    cb({ requestHeaders: details.requestHeaders })
-  })
-  const win = new BrowserWindow({
+  // THE WINDOW FIRST, the house after: the person sees the Desktop start at once, and sees it fail if it fails.
+  win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1024, minHeight: 680,
     title: 'Milpa Desktop', backgroundColor: '#17120D',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   })
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  keepOnTheHouse(win)
+  win.loadFile(path.join(__dirname, 'renderer', 'boot.html'))
+  try {
+    await startBackend()
+    BOOT.phase = 'up'
+    BOOT.panel = await panelServed()
+    // A house that already serves its panel (MILPA_KEEP_BACKEND, a restart of the window) opens it straight away; a
+    // fresh one stays on the boot screen, which says how to give it one.
+    if (BOOT.panel) { BOOT.phase = 'opening'; win.loadURL(SIGNIN_URL) }
+  } catch (e) {
+    BOOT.phase = 'failed'
+    BOOT.error = String(e && e.message || e).split('\n')[0]
+  }
   // Open maximized — a workspace, not a small dialog. The 1440×900 size above is the RESTORED size
   // (what you get when you un-maximize), so it still behaves on small screens.
   win.maximize()

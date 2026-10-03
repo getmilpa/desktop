@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milpa Desktop</title>
+<link rel="stylesheet" href="ds/fonts.css">
+<link rel="stylesheet" href="ds/tokens/milpa-tokens.css">
+<link rel="stylesheet" href="ds/_ds_bundle.css">
+<style>
+  [hidden]{display:none!important}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font-body);display:grid;place-items:center}
+  .boot{width:min(46rem,calc(100vw - 4rem));display:flex;flex-direction:column;gap:var(--space-5)}
+  .dv-note{font-family:var(--font-mono);font-size:var(--text-2xs);line-height:1.4;color:var(--text-muted);letter-spacing:.02em}
+  .boot code{font-family:var(--font-mono);font-size:var(--text-xs);display:block;padding:var(--space-2) var(--space-3);border:1px solid var(--border);border-radius:var(--radius-base);background:var(--surface);user-select:all;overflow-wrap:anywhere}
+  .boot ol{margin:0;padding-inline-start:1.2rem;display:flex;flex-direction:column;gap:var(--space-3)}
+  /* the loader: the M germinating from its grains (milpa-design), the same mark the workspace boots with */
+  @keyframes milpa-germina {
+    0%   { opacity: 0; transform: translateY(7px) scale(0.15); }
+    10%  { opacity: 1; transform: translateY(0)   scale(1.12); }
+    18%  { transform: scale(1); }
+    60%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0.12; transform: scale(0.88); }
+  }
+  .milpa-loader{width:72px;height:72px;display:block}
+  .milpa-loader .grano{transform-box:fill-box;transform-origin:center;opacity:1}
+  [data-phase="starting"] .milpa-loader .grano{animation:milpa-germina 2.4s var(--ease-standard,ease) infinite;animation-delay:calc(var(--i) * 90ms)}
+  @media (prefers-reduced-motion: reduce){ [data-phase="starting"] .milpa-loader .grano{animation:none;opacity:1} }
+</style>
+</head>
+<body>
+<main class="boot" id="boot" data-phase="starting">
+  <svg class="milpa-loader" viewBox="0 0 60 60" role="img" aria-label="Milpa"><rect class="grano" style="--i:0" x="0" y="0" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:1" x="0" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:2" x="0" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:3" x="0" y="37.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:4" x="0" y="50" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:5" x="12.5" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:6" x="25" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:7" x="37.5" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:8" x="50" y="0" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:9" x="50" y="12.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:10" x="50" y="25" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:11" x="50" y="37.5" width="10" height="10" rx="2.5" fill="#E8B14C"/><rect class="grano" style="--i:12" x="50" y="50" width="10" height="10" rx="2.5" fill="#E8B14C"/></svg>
+  <div>
+    <p class="mui-section__kicker" style="margin:0 0 var(--space-2)" data-i18n="boot.kicker">local workstation</p>
+    <h1 style="font-family:var(--font-heading);font-size:var(--text-3xl);line-height:1.05;margin:0" id="boot-title" data-i18n="boot.starting">Starting the house…</h1>
+  </div>
+  <div class="mui-alert mui-alert--danger" role="alert" id="boot-error" hidden><span class="mui-alert__icon">!</span><div class="mui-alert__content"><p class="mui-alert__desc" id="boot-error-text"></p></div></div>
+  <section id="boot-setup" hidden>
+    <p style="margin:0 0 var(--space-3)" data-i18n="boot.noPanel">Its panel is not enabled yet. In a terminal:</p>
+    <ol>
+      <li><span data-i18n="boot.step.found">Found the house (once, signed):</span><code id="cmd-found"></code></li>
+      <li><span data-i18n="boot.step.panel">Enable its panel (signed) — it prints a one-time link:</span><code id="cmd-panel"></code></li>
+    </ol>
+  </section>
+  <section id="boot-ready" hidden>
+    <p style="margin:0 0 var(--space-3)" data-i18n="boot.panelReady">The panel is enabled.</p>
+    <button type="button" class="mui-btn mui-btn--primary" id="boot-panel" data-i18n="boot.panel.open">Open the panel</button>
+  </section>
+  <!-- The one-time link is how THIS device registers its passkey: it is offered whether or not the panel is already
+       enabled, because enabling it is what prints the link. -->
+  <section id="boot-paste" hidden>
+    <label for="boot-link" data-i18n="boot.step.paste">To register this device, paste the one-time link that command printed:</label>
+    <div class="mui-cluster mui-cluster--sm" style="flex-wrap:nowrap;margin-top:var(--space-2)"><input id="boot-link" class="mui-input" style="flex:1;font-family:var(--font-mono);font-size:var(--text-xs)" autocomplete="off" spellcheck="false"><button type="button" class="mui-btn mui-btn--secondary" id="boot-open" data-i18n="boot.paste.open">Open</button></div>
+    <p class="dv-note" id="boot-link-error" role="status" hidden></p>
+  </section>
+  <p class="dv-note" id="boot-container"></p>
+</main>
+<script src="i18n.js"></script>
+<script src="boot.js"></script>
+</body>
+</html>
