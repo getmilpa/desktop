@@ -5,6 +5,8 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-03
+
 ### Fixed
 - Passkeys on houses with milpa/auth ≥ 0.11 (app-runtime ≥ 0.201): the house only admits ceremonies from the origins it knows, and the Desktop's port (8899, or `MILPA_PORT`) was none of them — `http://localhost:8000` is what a house declares or derives — so the passkey window's registration and sign-in answered 401 (greenhouse evidence/1068). The container now starts with `MILPA_PASSKEY_ORIGINS=http://localhost:<port>`, the origin the passkey window opens at; the house adds it to its own from the app-runtime release that carries getmilpa/app-runtime#663 (greenhouse decisions/0534); older runtimes ignore the variable, so on them the window is still refused.
 
