@@ -2,7 +2,12 @@
 // main process does the privileged work (drive the agent in the container, fetch its API with the Bearer).
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('milpa', {
+// Only the Desktop's own pages get the bridge. The same window later shows the house's panel over http — a page that
+// also shows what a resident built — and that page gets nothing here (main refuses its calls too; evidence/1091, E3).
+if (location.protocol === 'file:') contextBridge.exposeInMainWorld('milpa', {
+  // the boot screen: where the house is and whether it serves its panel yet; open a link of THIS house in the window
+  boot: () => ipcRenderer.invoke('milpa:boot'),
+  openInWindow: (url) => ipcRenderer.invoke('milpa:openInWindow', url),
   // read the container's HTTP API (Bearer injected by the main process' webRequest hook)
   api: (path) => ipcRenderer.invoke('milpa:api', path),
   // drive the agent loop: run `coa agent <query>` in the container against the configured model

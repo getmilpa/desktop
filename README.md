@@ -9,10 +9,10 @@
 
 # milpa/desktop
 
-A native desktop shell for the [Milpa](https://github.com/getmilpa) agent. The window is an Electron app
-rendering a local, `@milpa/design`-styled UI; the backend is a real Milpa app running in a Docker container.
-The Electron **main process** owns everything the renderer must never touch — the container's lifecycle, the
-Bearer credential, driving the agent, and identity/key custody — and exposes a narrow bridge to the renderer.
+A native desktop shell for the [Milpa](https://github.com/getmilpa) agent. The backend is a real Milpa app running
+in a Docker container, and the window is that house's own panel: a local boot screen while the house comes up, then
+the panel at the origin the Desktop declared to it, where you sign in with your passkey. The Electron **main process**
+owns the container's lifecycle, driving the agent and identity/key custody; it holds no credential of its own.
 
 Beyond the agent board, the window carries a **live preview pane**: type the name of a screen the agent
 declared (`screen:declare`) and see the UI it is building, rendered by the same container that serves it.
@@ -48,9 +48,12 @@ served by `php -S` with several workers, and the UI polls the session instead.
 
 ## Architecture
 
-- **main.js** — the trusted process. Starts and stops the backend container, mints the Bearer token, injects
-  it via `session.webRequest.onBeforeSendHeaders`, drives the agent, and holds the signing key custody. The
-  renderer is `file://` and never sees the credential.
+- **main.js** — the trusted process. Starts and stops the backend container, shows the boot screen
+  (`renderer/boot.html`) and then the house's panel in the same window, drives the agent, and holds the signing key
+  custody. It holds no Bearer: the house refuses an unsigned `token:new` (greenhouse decisions/0522), and the person's
+  passkey sign-in is what the house judges (evidence/1091). It declares two facts to the house it serves: the origin a
+  passkey sees (`MILPA_PASSKEY_ORIGINS`) and how a person reaches its terminal (`MILPA_CLI_PREFIX`), so the commands
+  the house prints run as printed. The bridge is exposed only to the Desktop's own `file://` pages, never to the panel.
 - **preload.js** — the narrow bridge: `milpa:component` (fetch a rendered component) and `milpa:live` (the
   live wire). Nothing else crosses.
 - **renderer/** — the projected UI. Alpine-hydrated components, i18n (en/es, English default), and the live
