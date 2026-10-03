@@ -24,6 +24,7 @@
             "main.js",
             "choose-image.js",
             "preload.js",
+            "window-chrome.js",
             "renderer/**/*",
             "package.json"
         ],

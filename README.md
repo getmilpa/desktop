@@ -56,6 +56,9 @@ served by `php -S` with several workers, and the UI polls the session instead.
   the house prints run as printed. The bridge is exposed only to the Desktop's own `file://` pages, never to the panel.
 - **preload.js** — the narrow bridge: `milpa:component` (fetch a rendered component) and `milpa:live` (the
   live wire). Nothing else crosses.
+- **window-chrome.js** — the window's own keys and menu, since it shows a web page and has no native menu: reload
+  (`Ctrl/Cmd+R`, `F5`; with `Shift`, past the cache), back and forward (`Alt+←`, `Alt+→`), devtools
+  (`Ctrl/Cmd+Shift+I`), and a right-click menu that offers Back, Forward and Reload by name. It hands the page nothing.
 - **renderer/** — the projected UI. Alpine-hydrated components, i18n (en/es, English default), and the live
   preview pane. It *projects* facts (session owner, decisions); it never decides them.
 

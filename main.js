@@ -564,14 +564,10 @@ app.whenReady().then(async () => {
   // Open maximized — a workspace, not a small dialog. The 1440×900 size above is the RESTORED size
   // (what you get when you un-maximize), so it still behaves on small screens.
   win.maximize()
-  // The menu is gone, but keep the two shortcuts that matter: reload (Ctrl/Cmd+R) and devtools
-  // (Ctrl/Cmd+Shift+I). Copy/paste in inputs is handled by Chromium without a menu.
-  win.webContents.on('before-input-event', (e, input) => {
-    if (input.type !== 'keyDown') return
-    const mod = input.control || input.meta
-    if (mod && !input.shift && input.key.toLowerCase() === 'r') win.webContents.reload()
-    else if (mod && input.shift && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools()
-  })
+  // The menu is gone, and the window shows a web page: it keeps the keys a browser answers to — reload (Ctrl/Cmd+R,
+  // F5), back and forward (Alt+Left/Right), devtools (Ctrl/Cmd+Shift+I) — and a right-click menu that names them
+  // (greenhouse decisions/0563). The page is handed nothing: this is chrome of the window.
+  require('./window-chrome.js').attach(win, { Menu })
 
   if (process.env.MILPA_CAPTURE) {
     win.webContents.on('did-finish-load', async () => {
