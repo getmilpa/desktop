@@ -22,6 +22,7 @@
         "artifactName": "Milpa-Desktop-${version}-${arch}.${ext}",
         "files": [
             "main.js",
+            "choose-image.js",
             "preload.js",
             "renderer/**/*",
             "package.json"
