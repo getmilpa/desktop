@@ -5,6 +5,11 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-03
+
+### Added
+- The window reloads: Ctrl/Cmd+R, F5, Ctrl+Shift+R, Alt+←/→, and a right-click menu with Back / Forward / Reload. The Desktop's bridge stays out of the panel (greenhouse decisions/0563).
+
 ## [0.5.0] - 2026-10-03
 
 ### Fixed
