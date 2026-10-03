@@ -45,6 +45,7 @@ const IMAGE_FLOOR = 'ghcr.io/getmilpa/framework:dev'
 let IMAGE = process.env.MILPA_IMAGE || IMAGE_PREFERRED
 let SERVER = 'php-s'   // or 'frankenphp' — read from the image in startBackend()
 let HUB = false        // whether the backend answers as a Mercure hub on its own port — probed, not assumed
+let TRIAL = false      // whether the house can confine a seat's trial — asked of the house, not assumed
 const NAME = 'milpa-desktop-backend'
 const HOST_PORT = process.env.MILPA_PORT || '8899'
 const BASE = `http://127.0.0.1:${HOST_PORT}`
@@ -79,6 +80,7 @@ async function startBackend () {
         for (let i = 0; i < 10; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 500)) }
         try { SERVER = serverOf(sh('docker', ['inspect', '--format', '{{.Config.Image}}', NAME])) } catch {}
         HUB = await probeHub()
+        TRIAL = probeTrial()
         try { const out = sh('docker', ['exec', NAME, 'php', 'bin/coa', 'token:new', '--actor=desktop', '--scopes=*', '--scopes=milpa:component:data-table:*', '--scopes=milpa:component:autocomplete:*', '--scopes=milpa:component:metric-card:*', '--scopes=milpa:component:state-machine:*', '--scopes=milpa:component:dashboard-grid:*', '--scopes=milpa:component:input:*', '--scopes=milpa:component:select:*', '--scopes=milpa:component:checkbox:*', '--scopes=milpa:component:textarea:*', '--scopes=agent:read', '--scopes=agent:answer', '--scopes=agent:run'])
               const m = out.match(/^token:\s*(\S+)/m); token = m ? m[1] : null } catch {}
         return
@@ -105,9 +107,10 @@ async function startBackend () {
   const serve = SERVER === 'frankenphp'
     ? [IMAGE]
     : ['-e', 'PHP_CLI_SERVER_WORKERS=8', IMAGE, 'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php']
-  sh('docker', ['run', '-d', '--name', NAME, ...net, '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, ...modelEnv, ...mounts, ...serve])
+  sh('docker', ['run', '-d', '--name', NAME, ...net, ...trialSeccomp(IMAGE), '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, ...modelEnv, ...mounts, ...serve])
   for (let i = 0; i < 40; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 800)) }
   HUB = await probeHub()
+  TRIAL = probeTrial()
   // The live door is governed: an action needs a milpa:component:<name>:<action> scope, and the
   // component segment is NOT covered by '*' (greenhouse decisions/0149). Grant the hosted components
   // explicitly so a hosted component's actions round-trip.
@@ -133,6 +136,27 @@ function serverOf (image) {
 // (anonymous allowed) or 401 (JWT first). `php -S` answers 404 — no hub, so the renderer polls.
 async function probeHub () {
   try { const r = await fetch(`${BASE}/.well-known/mercure`, { signal: AbortSignal.timeout(3000) }); try { await r.body?.cancel() } catch {} return r.status === 400 || r.status === 401 } catch { return false }
+}
+// A SEAT BUILDS INSIDE THE CONTAINER (greenhouse decisions/0558). `make` / `implement` from a seat run in a confined
+// trial — bubblewrap, a read-only root, no network, its own pids (decisions/0530) — and inside Docker the house is
+// root without CAP_SYS_ADMIN, where bubblewrap can make namespaces only in a USER namespace. Docker's default seccomp
+// profile forbids that; the image carries a profile that is Docker's default plus the four syscalls it takes
+// (clone, mount, pivot_root, umount2), and the Desktop hands it to `docker run`. Measured (evidence/1092): the trial
+// gets its whole confinement, the container keeps Docker's default capabilities and still cannot mount. It is NOT
+// `--privileged`. The profile is read from the image that is about to run, so it always matches what that image
+// expects; an image without one runs as before — without a trial, which the house reports instead of faking.
+function trialSeccomp (image) {
+  try {
+    const profile = sh('docker', ['run', '--rm', '--entrypoint', 'cat', image, '/usr/local/share/milpa/trial-seccomp.json'], { stdio: ['ignore', 'pipe', 'ignore'] })
+    JSON.parse(profile)
+    const file = path.join(app.getPath('userData'), 'trial-seccomp.json')
+    fs.writeFileSync(file, profile, { mode: 0o600 })
+    return ['--security-opt', `seccomp=${file}`]
+  } catch { return [] }
+}
+// Whether the house can confine a trial here, in its own words (app-runtime TrialRunner::available()).
+function probeTrial () {
+  try { return sh('docker', ['exec', NAME, 'php', '-r', 'require "vendor/autoload.php"; echo (new Milpa\\AppRuntime\\Agent\\TrialRunner())->available() ? "yes" : "no";']) === 'yes' } catch { return false }
 }
 function stopBackend () { if (process.env.MILPA_KEEP_BACKEND === '1') return; try { sh('docker', ['rm', '-f', NAME]) } catch {} }
 
@@ -471,7 +495,7 @@ ipcMain.handle('milpa:enableCapability', async (_e, capability) => {
   const { err, out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'capabilities:enable', `--capability=${cap}`, '--sign', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: !err, raw: (out || String(err)).slice(-2000) } }
 })
-ipcMain.handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: !!token, base: BASE, image: IMAGE, server: SERVER, hub: HUB }))
+ipcMain.handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: !!token, base: BASE, image: IMAGE, server: SERVER, hub: HUB, trial: TRIAL }))
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)   // no native File/Edit/View menu — it means nothing for this app
