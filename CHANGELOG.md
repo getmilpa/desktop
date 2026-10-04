@@ -5,6 +5,10 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+### Fixed
+- A security key that asks for a PIN can register and sign in: the boot screen opens the one-time link and the panel **in your browser** (first button), or in the window (second). Electron ships Chromium's WebAuthn without a PIN dialog, so in the window a ceremony that requires user verification — every one of the house's — answered «The key did not answer: The operation either timed out or was not allowed» to a YubiKey 5 (greenhouse decisions/0566, evidence/1100). The choice is remembered; a launch opens the panel in the window by itself only after the window was chosen. The right-click menu on a page of the house offers «Open in your browser». New `milpa:openInBrowser` IPC, held to links of this house like `milpa:openInWindow`.
+- The boot screen no longer prints `foundation:found --domain="…" --objective="…" --sign`, a command that founded a house with «…» when copied as it stood. It asks what the house is for and what founding it should achieve, and composes the command — quoted for a shell — only when both fields say something.
+
 ## [0.5.1] - 2026-10-03
 
 ### Added

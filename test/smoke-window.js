@@ -38,7 +38,10 @@ app.whenReady().then(async () => {
   try {
     let chrome = null
     try { chrome = require(path.join(ROOT, 'window-chrome.js')) } catch (e) { record('the window\'s keys are a module main.js and this test share', false, String(e.message).split('\n')[0]) }
-    if (chrome) chrome.attach(win, { Menu })
+    // The system's browser, stood in for: what the menu hands it is recorded, and nothing is opened on this machine.
+    const browsed = []
+    const shell = { openExternal: async (u) => { browsed.push(u) } }
+    if (chrome) chrome.attach(win, { Menu, shell })
 
     // What a key asks for, read off the module itself: a key going UP asks for nothing, or every reload would be two.
     const asks = (input) => chrome ? chrome.act(input) : undefined
@@ -75,14 +78,25 @@ app.whenReady().then(async () => {
     record('typing «r» in a field types it and reloads nothing [negative control]', served['/'] === 5 && (await js("document.querySelector('#field').value")) === 'r', JSON.stringify(served))
 
     // A reload is also something a person can FIND: the right-click menu offers it.
-    const template = chrome ? chrome.menuTemplate(win, { isEditable: false, selectionText: '' }) : []
+    const template = chrome ? chrome.menuTemplate(win, { isEditable: false, selectionText: '' }, { shell }) : []
     const labels = template.filter(i => i.label).map(i => i.label)
-    record('the right-click menu offers Back, Forward and Reload', JSON.stringify(labels) === JSON.stringify(['Back', 'Forward', 'Reload']), JSON.stringify(labels))
+    record('the right-click menu offers Back, Forward, Reload — and the way to the browser', JSON.stringify(labels) === JSON.stringify(['Back', 'Forward', 'Reload', 'Open in your browser']), JSON.stringify(labels))
     const item = label => template.find(i => i.label === label) || {}
     record('with nowhere to go back to, Back is offered disabled', item('Back').enabled === false && item('Forward').enabled === false)
     if (item('Reload').click) item('Reload').click()
     await sleep(500)
     record('choosing Reload reloads the page', served['/'] === 6, JSON.stringify(served))
+    // A page of the house that this window cannot finish — a passkey ceremony with a key that asks for a PIN — is one
+    // right-click away from the browser, at the address it is on (greenhouse decisions/0566).
+    await win.loadURL(origin + '/second?invite=abc'); await sleep(300)
+    const there = chrome ? chrome.menuTemplate(win, {}, { shell }).find(i => i.label === 'Open in your browser') : null
+    if (there && there.click) there.click()
+    await sleep(100)
+    record('«Open in your browser» hands the browser the page the window is on', JSON.stringify(browsed) === JSON.stringify([origin + '/second?invite=abc']), JSON.stringify(browsed))
+    const noShell = chrome ? chrome.menuTemplate(win, {}).filter(i => i.label).map(i => i.label) : []
+    record('a window given no way to the browser does not offer one [negative control]', JSON.stringify(noShell) === JSON.stringify(['Back', 'Forward', 'Reload']), JSON.stringify(noShell))
+    await win.loadURL(origin + '/'); await sleep(300)
+    served['/'] -= 1; served['/second'] -= 1   // the two loads above are this block's own
     const inField = chrome ? chrome.menuTemplate(win, { isEditable: true, selectionText: '' }).map(i => i.role).filter(Boolean) : []
     record('in a field the menu offers cut, copy and paste first', JSON.stringify(inField) === JSON.stringify(['cut', 'copy', 'paste']), JSON.stringify(inField))
 
@@ -96,6 +110,8 @@ app.whenReady().then(async () => {
     record('the panel\'s page is never handed the Desktop\'s bridge, before or after a reload', (await js('typeof window.milpa')) === 'undefined')
     await win.loadFile(path.join(ROOT, 'renderer', 'boot.html')); await sleep(400)
     record('the Desktop\'s own page still gets it [positive control]', (await js('typeof window.milpa')) === 'object')
+    const onBoot = chrome ? chrome.menuTemplate(win, {}, { shell }).filter(i => i.label).map(i => i.label) : []
+    record('the Desktop\'s own page is not offered to the browser: it is a file of this app [negative control]', !onBoot.includes('Open in your browser') && onBoot.includes('Reload'), JSON.stringify(onBoot))
   } catch (e) { record('harness ran without throwing', false, String(e)) }
 
   server.close()

@@ -11,7 +11,8 @@
 
 A native desktop shell for the [Milpa](https://github.com/getmilpa) agent. The backend is a real Milpa app running
 in a Docker container, and the window is that house's own panel: a local boot screen while the house comes up, then
-the panel at the origin the Desktop declared to it, where you sign in with your passkey. The Electron **main process**
+the panel at the origin the Desktop declared to it, where you sign in with your passkey — in your browser when your
+security key asks for a PIN, which this window cannot ask for, or in the window itself. The Electron **main process**
 owns the container's lifecycle, driving the agent and identity/key custody; it holds no credential of its own.
 
 Beyond the agent board, the window carries a **live preview pane**: type the name of a screen the agent
@@ -54,11 +55,17 @@ served by `php -S` with several workers, and the UI polls the session instead.
   passkey sign-in is what the house judges (evidence/1091). It declares two facts to the house it serves: the origin a
   passkey sees (`MILPA_PASSKEY_ORIGINS`) and how a person reaches its terminal (`MILPA_CLI_PREFIX`), so the commands
   the house prints run as printed. The bridge is exposed only to the Desktop's own `file://` pages, never to the panel.
+- **open-where.js** — where the house's pages open: the person's browser, or this window. Electron ships Chromium's
+  WebAuthn without its dialogs, so this window cannot ask for a security key's PIN, and the house requires user
+  verification at enrollment and at every sign-in: a key that verifies by PIN (a YubiKey 5) does not answer here
+  (greenhouse decisions/0566). The boot screen offers the browser first and the window second, remembers the choice,
+  and opens the panel in the window by itself only for somebody who chose the window before.
 - **preload.js** — the narrow bridge: `milpa:component` (fetch a rendered component) and `milpa:live` (the
   live wire). Nothing else crosses.
 - **window-chrome.js** — the window's own keys and menu, since it shows a web page and has no native menu: reload
   (`Ctrl/Cmd+R`, `F5`; with `Shift`, past the cache), back and forward (`Alt+←`, `Alt+→`), devtools
-  (`Ctrl/Cmd+Shift+I`), and a right-click menu that offers Back, Forward and Reload by name. It hands the page nothing.
+  (`Ctrl/Cmd+Shift+I`), and a right-click menu that offers Back, Forward and Reload by name — and, on a page of the
+  house, «Open in your browser». It hands the page nothing.
 - **renderer/** — the projected UI. Alpine-hydrated components, i18n (en/es, English default), and the live
   preview pane. It *projects* facts (session owner, decisions); it never decides them.
 
