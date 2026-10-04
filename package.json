@@ -23,6 +23,7 @@
         "files": [
             "main.js",
             "choose-image.js",
+            "open-where.js",
             "preload.js",
             "window-chrome.js",
             "renderer/**/*",

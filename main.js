@@ -44,6 +44,7 @@ const IS_MAC = process.platform === 'darwin'
 // still runs, under `php -S` with several workers, and the renderer polls as before. MILPA_IMAGE names one image
 // and skips the choice; which server it gets is read from the image, not from its name.
 const { chooseImage, IMAGE_PREFERRED } = require('./choose-image.js')
+const openWhere = require('./open-where.js')
 let IMAGE = process.env.MILPA_IMAGE || IMAGE_PREFERRED
 let SERVER = 'php-s'   // or 'frankenphp' — read from the image in startBackend()
 let HUB = false        // whether the backend answers as a Mercure hub on its own port — probed, not assumed
@@ -71,9 +72,10 @@ const MODEL = { base: process.env.MILPA_AGENT_BASE_URL || 'http://llama.local:11
 // house asks the model.
 const CTX = process.env.MILPA_AGENT_CONTEXT_TOKENS || ''
 const ctxEnv = () => CTX ? ['-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`] : []
-// The panel the window opens once the house answers (milpa/admin), through its sign-in: the passkey sign-in is a
-// session cookie, so it ends with the window, and a panel opened with nobody signed in offers no way in (there is no
-// address bar here). One touch of the passkey per launch — never a gpg signature.
+// The panel (milpa/admin), through its sign-in: the passkey sign-in is a session cookie, so it ends with whatever
+// holds it, and a panel opened with nobody signed in offers no way in. One touch of the passkey per launch — never a
+// gpg signature. WHERE it opens is the person's choice (greenhouse decisions/0566): this window cannot ask for a
+// security key's PIN, so the boot screen offers the browser first and this window second (open-where.js).
 const PANEL_URL = `${PASSKEY_ORIGIN}/milpa/admin`
 const SIGNIN_URL = `${PASSKEY_ORIGIN}/webauthn/signin?next=${encodeURIComponent('/milpa/admin')}`
 // What the window shows while it is not the panel yet — read by the boot screen through `milpa:boot`.
@@ -509,25 +511,37 @@ handle('milpa:enableCapability', async (_e, capability) => {
 handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: BOOT.phase === 'up', base: BASE, image: IMAGE, server: SERVER, hub: HUB, trial: TRIAL }))
 
 // ── the window: the boot screen, then the house's panel (greenhouse evidence/1091, E3) ─────────────────────────────
-// What the boot screen reads: where the house is, whether it serves its panel yet, and the two commands that give it
-// one — printed with the `docker exec` they are typed with here (E5), because the boot screen is the Desktop's own page.
+// What the boot screen reads: where the house is, whether it serves its panel yet, and the commands that give it one
+// — printed with the `docker exec` they are typed with here (E5), because the boot screen is the Desktop's own page.
+// THE FOUNDING COMMAND IS NOT PRINTED HERE (greenhouse decisions/0566). It was, as `foundation:found --domain="…"
+// --objective="…" --sign`; Rod copied it as it stood and the house was founded with «…» — and a constitution is
+// written once (evidence/1100). The boot screen gets `run`, how a command starts here, and composes the founding
+// command from what the person types into two fields: until both say something there is no command to copy.
 handle('milpa:boot', async () => {
   if (BOOT.phase === 'up' && !BOOT.panel) BOOT.panel = await panelServed()
   const run = `${TERMINAL} php bin/coa`
   return {
     ...BOOT, origin: PASSKEY_ORIGIN, panelUrl: SIGNIN_URL, container: BOOT.phase === 'starting' ? null : NAME, image: IMAGE, server: SERVER,
-    commands: { found: `${run} foundation:found --domain="…" --objective="…" --sign`, panel: `${run} capabilities:enable milpa/admin --sign` },
+    commands: { run, panel: `${run} capabilities:enable milpa/admin --sign` },
   }
 })
 // Open a link of THIS house in the window — the one-time link the panel's enablement printed, or the panel itself.
 // Any other origin is refused here, whatever the boot screen already said.
+const notThisHouse = { ok: false, error: `refused: not a link of this house (${PASSKEY_ORIGIN})` }
 handle('milpa:openInWindow', async (_e, url) => {
-  let target = null
-  try { target = new URL(String(url || '')) } catch {}
-  if (!target || target.origin !== PASSKEY_ORIGIN) return { ok: false, error: `refused: not a link of this house (${PASSKEY_ORIGIN})` }
+  const target = openWhere.linkOfThisHouse(url, PASSKEY_ORIGIN)
+  if (!target) return notThisHouse
   BOOT.phase = 'opening'
   win.loadURL(target.href)
   return { ok: true }
+})
+// …or in the person's browser, which can ask for a security key's PIN where this window cannot (decisions/0566).
+// The same check: only a link of this house is handed to the system. The window stays on the boot screen.
+handle('milpa:openInBrowser', async (_e, url) => {
+  const target = openWhere.linkOfThisHouse(url, PASSKEY_ORIGIN)
+  if (!target) return notThisHouse
+  openWhere.remember(app.getPath('userData'), 'browser')
+  try { await shell.openExternal(target.href); return { ok: true } } catch (e) { return { ok: false, error: String(e && e.message || e).split('\n')[0] } }
 })
 // The window stays on this house. A link elsewhere (a resident's blog post linking out, a doc) opens in the person's
 // browser; a popup of this house opens as a child window, an http page the bridge is never exposed to.
@@ -549,14 +563,18 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   })
   keepOnTheHouse(win)
+  // The window is remembered as the place for the panel once the panel is IN it — a sign-in finished here — not when
+  // it was merely asked for: a key with a PIN never gets past the sign-in in this window (greenhouse decisions/0566).
+  win.webContents.on('did-navigate', (_e, url) => { if (openWhere.isThePanel(url, PANEL_URL)) openWhere.remember(app.getPath('userData'), 'window') })
   win.loadFile(path.join(__dirname, 'renderer', 'boot.html'))
   try {
     await startBackend()
     BOOT.phase = 'up'
     BOOT.panel = await panelServed()
-    // A house that already serves its panel (MILPA_KEEP_BACKEND, a restart of the window) opens it straight away; a
-    // fresh one stays on the boot screen, which says how to give it one.
-    if (BOOT.panel) { BOOT.phase = 'opening'; win.loadURL(SIGNIN_URL) }
+    // A house that already serves its panel (MILPA_KEEP_BACKEND, a restart of the window) opens it straight away FOR
+    // SOMEBODY WHO CHOSE THIS WINDOW BEFORE. Anybody else stays on the boot screen, which offers the browser and the
+    // window: a sign-in put here by itself is one a key with a PIN cannot answer (greenhouse decisions/0566).
+    if (openWhere.opensTheWindowAtLaunch(openWhere.recall(app.getPath('userData')), BOOT.panel)) { BOOT.phase = 'opening'; win.loadURL(SIGNIN_URL) }
   } catch (e) {
     BOOT.phase = 'failed'
     BOOT.error = String(e && e.message || e).split('\n')[0]
@@ -567,7 +585,7 @@ app.whenReady().then(async () => {
   // The menu is gone, and the window shows a web page: it keeps the keys a browser answers to — reload (Ctrl/Cmd+R,
   // F5), back and forward (Alt+Left/Right), devtools (Ctrl/Cmd+Shift+I) — and a right-click menu that names them
   // (greenhouse decisions/0563). The page is handed nothing: this is chrome of the window.
-  require('./window-chrome.js').attach(win, { Menu })
+  require('./window-chrome.js').attach(win, { Menu, shell })
 
   if (process.env.MILPA_CAPTURE) {
     win.webContents.on('did-finish-load', async () => {

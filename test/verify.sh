@@ -8,6 +8,8 @@ ELECTRON="$(node -p 'require("electron")')"
 status=0
 # Which image a launch runs when nobody names one — plain node, a fake docker (greenhouse evidence/1095, G1).
 node "$DIR/test/choose-image.js" || status=1
+# Where the house's pages open — this window or the browser — and that every module main.js loads is packaged.
+node "$DIR/test/open-where.js" || status=1
 for SMOKE in "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-window.js"; do
   if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ]; then
     xvfb-run -a --server-args='-screen 0 1320x840x24' "$ELECTRON" --no-sandbox "$SMOKE" || status=1

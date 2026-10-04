@@ -15,6 +15,10 @@
   .dv-note{font-family:var(--font-mono);font-size:var(--text-2xs);line-height:1.4;color:var(--text-muted);letter-spacing:.02em}
   .boot code{font-family:var(--font-mono);font-size:var(--text-xs);display:block;padding:var(--space-2) var(--space-3);border:1px solid var(--border);border-radius:var(--radius-base);background:var(--surface);user-select:all;overflow-wrap:anywhere}
   .boot ol{margin:0;padding-inline-start:1.2rem;display:flex;flex-direction:column;gap:var(--space-3)}
+  /* what stands where the founding command will be, while it is not one: nothing a triple-click can carry away */
+  .boot code[data-ready="false"]{font-family:var(--font-body);color:var(--text-muted);border-style:dashed;user-select:none}
+  .boot .found-fields{display:grid;grid-template-columns:max-content 1fr;gap:var(--space-2) var(--space-3);align-items:center;margin:var(--space-2) 0}
+  .boot .found-fields label{font-size:var(--text-xs);color:var(--text-muted)}
   /* the loader: the M germinating from its grains (milpa-design), the same mark the workspace boots with */
   @keyframes milpa-germina {
     0%   { opacity: 0; transform: translateY(7px) scale(0.15); }
@@ -40,20 +44,31 @@
   <section id="boot-setup" hidden>
     <p style="margin:0 0 var(--space-3)" data-i18n="boot.noPanel">Its panel is not enabled yet. In a terminal:</p>
     <ol>
-      <li><span data-i18n="boot.step.found">Found the house (once, signed):</span><code id="cmd-found"></code></li>
+      <!-- The founding command is composed from what the person types here; until both fields say something there
+           is no command to copy (greenhouse decisions/0566 — a house was founded with the «…» this used to print). -->
+      <li><span data-i18n="boot.step.found">Found the house (once, signed). Say what it is for:</span>
+        <div class="found-fields">
+          <label for="found-domain" data-i18n="boot.found.domain">What this house is for</label>
+          <input id="found-domain" class="mui-input" autocomplete="off" spellcheck="false" data-i18n-ph="boot.found.domain.ph">
+          <label for="found-objective" data-i18n="boot.found.objective">What founding it should achieve</label>
+          <input id="found-objective" class="mui-input" autocomplete="off" spellcheck="false" data-i18n-ph="boot.found.objective.ph">
+        </div>
+        <code id="cmd-found" data-ready="false"></code></li>
       <li><span data-i18n="boot.step.panel">Enable its panel (signed) — it prints a one-time link:</span><code id="cmd-panel"></code></li>
     </ol>
   </section>
   <section id="boot-ready" hidden>
     <p style="margin:0 0 var(--space-3)" data-i18n="boot.panelReady">The panel is enabled.</p>
-    <button type="button" class="mui-btn mui-btn--primary" id="boot-panel" data-i18n="boot.panel.open">Open the panel</button>
+    <div class="mui-cluster mui-cluster--sm"><button type="button" class="mui-btn mui-btn--primary" id="boot-panel" data-i18n="boot.panel.open">Open the panel in your browser</button><button type="button" class="mui-btn mui-btn--secondary" id="boot-panel-here" data-i18n="boot.panel.here">Open it in this window</button></div>
   </section>
   <!-- The one-time link is how THIS device registers its passkey: it is offered whether or not the panel is already
        enabled, because enabling it is what prints the link. -->
   <section id="boot-paste" hidden>
     <label for="boot-link" data-i18n="boot.step.paste">To register this device, paste the one-time link that command printed:</label>
-    <div class="mui-cluster mui-cluster--sm" style="flex-wrap:nowrap;margin-top:var(--space-2)"><input id="boot-link" class="mui-input" style="flex:1;font-family:var(--font-mono);font-size:var(--text-xs)" autocomplete="off" spellcheck="false"><button type="button" class="mui-btn mui-btn--secondary" id="boot-open" data-i18n="boot.paste.open">Open</button></div>
+    <div class="mui-cluster mui-cluster--sm" style="flex-wrap:nowrap;margin-top:var(--space-2)"><input id="boot-link" class="mui-input" style="flex:1;font-family:var(--font-mono);font-size:var(--text-xs)" autocomplete="off" spellcheck="false"><button type="button" class="mui-btn mui-btn--primary" id="boot-open" data-i18n="boot.paste.open">Open in your browser</button><button type="button" class="mui-btn mui-btn--secondary" id="boot-open-here" data-i18n="boot.paste.here">Open here</button></div>
     <p class="dv-note" id="boot-link-error" role="status" hidden></p>
+    <!-- Why the browser comes first (greenhouse decisions/0566, evidence/1100). -->
+    <p class="dv-note" id="boot-key-note" data-i18n="boot.key.note">A security key that asks for a PIN works in your browser. This window cannot ask for the PIN, so the key would not answer here; a key with a fingerprint reader works in both.</p>
   </section>
   <p class="dv-note" id="boot-container"></p>
 </main>
