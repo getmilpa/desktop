@@ -5,8 +5,9 @@
 // prompt, so a key that verifies its user by PIN — a YubiKey 5 — is discarded by a ceremony that requires user
 // verification, and the page reads «The operation either timed out or was not allowed» (evidence/1100). The house
 // requires it, at enrollment and at every sign-in. So the Desktop offers the browser, where the PIN is asked, and
-// remembers which one the person chose: a launch opens the panel in the window by itself only for somebody who chose
-// the window before — a key with a fingerprint reader works there.
+// remembers where the panel was last opened: a launch opens it in the window by itself only for somebody whose key
+// got them INTO the panel in this window before — a key with a fingerprint reader does. Asking for the window is
+// not that: a sign-in that never finished here must not become the next launch's dead end.
 //
 // (c) Rodrigo Vicente - TeamX Agency — Apache-2.0
 const fs = require('node:fs')
@@ -33,6 +34,11 @@ function remember (dir, where) {
   try { fs.writeFileSync(path.join(dir, FILE), JSON.stringify({ panel: where }) + '\n', { mode: 0o600 }) } catch {}
 }
 
+// Whether the window is on the house's panel — past the sign-in, which lives under another path.
+function isThePanel (url, panelUrl) {
+  try { const at = new URL(String(url || '')); const panel = new URL(panelUrl); return at.origin === panel.origin && (at.pathname === panel.pathname || at.pathname.startsWith(panel.pathname + '/')) } catch { return false }
+}
+
 function opensTheWindowAtLaunch (chosen, panelServed) { return panelServed === true && chosen === 'window' }
 
-module.exports = { linkOfThisHouse, recall, remember, opensTheWindowAtLaunch, FILE }
+module.exports = { linkOfThisHouse, recall, remember, isThePanel, opensTheWindowAtLaunch, FILE }

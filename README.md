@@ -59,7 +59,7 @@ served by `php -S` with several workers, and the UI polls the session instead.
   WebAuthn without its dialogs, so this window cannot ask for a security key's PIN, and the house requires user
   verification at enrollment and at every sign-in: a key that verifies by PIN (a YubiKey 5) does not answer here
   (greenhouse decisions/0566). The boot screen offers the browser first and the window second, remembers the choice,
-  and opens the panel in the window by itself only for somebody who chose the window before.
+  and opens the panel in the window by itself only for somebody whose key got them into the panel there before.
 - **preload.js** — the narrow bridge: `milpa:component` (fetch a rendered component) and `milpa:live` (the
   live wire). Nothing else crosses.
 - **window-chrome.js** — the window's own keys and menu, since it shows a web page and has no native menu: reload

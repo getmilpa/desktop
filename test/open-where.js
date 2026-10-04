@@ -20,6 +20,11 @@ if (where) {
   const admitted = foreign.filter(u => of(u) !== null)
   record('another origin, another port, an IP, a file, a script, a userinfo trick and nothing at all are not [negative control]', admitted.length === 0, JSON.stringify(admitted))
 
+  const PANEL = ORIGIN + '/milpa/admin'
+  record('the panel, and a page under it, is the panel', where.isThePanel(PANEL, PANEL) && where.isThePanel(PANEL + '/agent?session=x', PANEL))
+  const notPanel = [ORIGIN + '/webauthn/signin?next=%2Fmilpa%2Fadmin', ORIGIN + '/webauthn/enroll?invite=abc&next=%2Fmilpa%2Fadmin', ORIGIN + '/milpa/administrator', ORIGIN + '/blog', 'https://evil.example/milpa/admin', 'file:///x/renderer/boot.html', ''].filter(u => where.isThePanel(u, PANEL))
+  record('the sign-in, the enrollment, a look-alike path, a resident\'s page and another origin are not [negative control]', notPanel.length === 0, JSON.stringify(notPanel))
+
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milpa-open-where-'))
   record('nothing chosen yet: nothing is remembered', where.recall(dir) === null)
   record('…so a launch on a house with its panel stays on the boot screen, which offers both', where.opensTheWindowAtLaunch(where.recall(dir), true) === false)
@@ -27,7 +32,7 @@ if (where) {
   record('the browser was chosen: it is remembered', where.recall(dir) === 'browser')
   record('…and the next launch does not put a sign-in in the window', where.opensTheWindowAtLaunch(where.recall(dir), true) === false)
   where.remember(dir, 'window')
-  record('the window was chosen: the next launch opens the panel in it', where.recall(dir) === 'window' && where.opensTheWindowAtLaunch(where.recall(dir), true) === true)
+  record('the panel was reached in the window: the next launch opens it there', where.recall(dir) === 'window' && where.opensTheWindowAtLaunch(where.recall(dir), true) === true)
   record('…but only on a house that serves its panel', where.opensTheWindowAtLaunch('window', false) === false)
   where.remember(dir, 'somewhere else')
   record('a choice that is neither is not written over the last one [negative control]', where.recall(dir) === 'window')

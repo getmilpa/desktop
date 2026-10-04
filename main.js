@@ -531,7 +531,6 @@ const notThisHouse = { ok: false, error: `refused: not a link of this house (${P
 handle('milpa:openInWindow', async (_e, url) => {
   const target = openWhere.linkOfThisHouse(url, PASSKEY_ORIGIN)
   if (!target) return notThisHouse
-  openWhere.remember(app.getPath('userData'), 'window')
   BOOT.phase = 'opening'
   win.loadURL(target.href)
   return { ok: true }
@@ -564,6 +563,9 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   })
   keepOnTheHouse(win)
+  // The window is remembered as the place for the panel once the panel is IN it — a sign-in finished here — not when
+  // it was merely asked for: a key with a PIN never gets past the sign-in in this window (greenhouse decisions/0566).
+  win.webContents.on('did-navigate', (_e, url) => { if (openWhere.isThePanel(url, PANEL_URL)) openWhere.remember(app.getPath('userData'), 'window') })
   win.loadFile(path.join(__dirname, 'renderer', 'boot.html'))
   try {
     await startBackend()
