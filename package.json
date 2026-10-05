@@ -25,6 +25,8 @@
             "choose-image.js",
             "open-where.js",
             "preload.js",
+            "preload-key.js",
+            "security-key/**/*",
             "window-chrome.js",
             "renderer/**/*",
             "package.json"

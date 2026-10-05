@@ -5,6 +5,12 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+### Added
+- The window asks for a security key's PIN (Linux; greenhouse decisions/0568). The house requires user verification, a key without a fingerprint reader gives it by PIN, and the PIN is asked by the client — which Electron's Chromium is not, through Electron 44. So the Desktop is that client: on a page of the house, `navigator.credentials.create` and `.get` ask the main process first; when a plugged-in key needs its PIN asked, the Desktop speaks CTAP2 to it over `hidraw` (`security-key/`, no native module) and asks for the PIN in a window of its own (`renderer/key.html`), which shows who is asking and how many attempts the key has left. A PIN the key refuses is never sent again by itself; one that cannot be a PIN is never sent at all. With several keys plugged in the person touches the one they mean, and at sign-in the key the house knows is found without a touch. Every other ceremony — a fingerprint key, a platform authenticator, verification not required — goes to Chromium untouched. The page is handed what a browser hands it and nothing else: not the bridge, not the PIN. New `milpa:webauthn` IPC, served only to the top frame of a page of this house. `MILPA_SECURITY_KEYS` names the keys to use (and no other device is opened). On macOS nothing changes yet: the browser stays the first offer there.
+
+### Changed
+- The boot screen offers «Open here» first where the Desktop can ask for a key's PIN (Linux) and says so; elsewhere the browser stays first, as before.
+
 ## [0.5.2] - 2026-10-04
 
 ### Fixed

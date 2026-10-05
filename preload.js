@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 // also shows what a resident built — and that page gets nothing here (main refuses its calls too; evidence/1091, E3).
 if (location.protocol === 'file:') contextBridge.exposeInMainWorld('milpa', {
   // the boot screen: where the house is and whether it serves its panel yet; open a link of THIS house in the window,
-  // or in the person's browser — which can ask for a security key's PIN (greenhouse decisions/0566)
+  // or in the person's browser (greenhouse decisions/0566)
   boot: () => ipcRenderer.invoke('milpa:boot'),
   openInWindow: (url) => ipcRenderer.invoke('milpa:openInWindow', url),
   openInBrowser: (url) => ipcRenderer.invoke('milpa:openInBrowser', url),
@@ -53,3 +53,75 @@ if (location.protocol === 'file:') contextBridge.exposeInMainWorld('milpa', {
   // Save an audit export of the session to a file the human picks (a Save dialog in the main process).
   saveExport: (name, content) => ipcRenderer.invoke('milpa:saveExport', { name, content }),
 })
+
+// THE HOUSE'S PAGES GET ONE THING: WEBAUTHN, WITH A CLIENT THAT CAN ASK FOR A PIN (greenhouse decisions/0568).
+// Chromium in Electron cannot ask for a security key's PIN, so a key that verifies its user by PIN could not register
+// or sign in in this window (evidence/1100). On a page of the house — the origin main names, top frame only —
+// `navigator.credentials.create` and `.get` ask main first: when a plugged-in key needs its PIN asked, the Desktop
+// runs the ceremony and asks for the PIN in a window of its own; otherwise main says so and the call goes to
+// Chromium untouched, as it always did. The page hands in what it would hand a browser and gets back what a browser
+// returns. It gets no `window.milpa`, no docker, no gpg, and never the PIN. main checks who is asking again
+// (security-key/desk.js); this check only keeps the two functions off pages that would be refused anyway.
+const HOUSE = (process.argv.find(a => a.startsWith('--milpa-house=')) || '').slice('--milpa-house='.length)
+if (HOUSE !== '' && location.origin === HOUSE && window.top === window) {
+  const ask = (kind, publicKey) => ipcRenderer.invoke('milpa:webauthn', { kind, publicKey }).catch(() => ({ error: { name: 'NotAllowedError' } }))
+  // What follows runs in the page's world, and is everything the page is given. `ask` stays inside it.
+  contextBridge.executeInMainWorld({
+    func: (ask) => {
+      const container = navigator.credentials
+      const chromium = { create: container.create.bind(container), get: container.get.bind(container) }
+      const b64u = (b) => { const u = b instanceof ArrayBuffer ? new Uint8Array(b) : new Uint8Array(b.buffer, b.byteOffset, b.byteLength); let s = ''; for (const x of u) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') }
+      const buf = (s) => Uint8Array.from(atob(String(s).replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)).buffer
+      // The request as main reads it: the same fields, every byte string in base64url.
+      const listed = (l) => (Array.isArray(l) ? l.map(c => ({ type: c.type, id: b64u(c.id) })) : undefined)
+      const scalars = (o, names) => { const out = {}; if (o) for (const n of names) if (typeof o[n] === 'string' || typeof o[n] === 'number' || typeof o[n] === 'boolean') out[n] = o[n]; return out }
+      const wire = (pk) => ({
+        ...scalars(pk, ['rpId', 'timeout', 'attestation', 'userVerification']),
+        rp: pk.rp ? scalars(pk.rp, ['id', 'name']) : undefined,
+        user: pk.user ? { ...scalars(pk.user, ['name', 'displayName']), id: b64u(pk.user.id) } : undefined,
+        challenge: b64u(pk.challenge),
+        pubKeyCredParams: Array.isArray(pk.pubKeyCredParams) ? pk.pubKeyCredParams.map(p => scalars(p, ['type', 'alg'])) : undefined,
+        authenticatorSelection: pk.authenticatorSelection ? scalars(pk.authenticatorSelection, ['userVerification', 'residentKey', 'requireResidentKey', 'authenticatorAttachment']) : undefined,
+        excludeCredentials: listed(pk.excludeCredentials), allowCredentials: listed(pk.allowCredentials),
+      })
+      // The key's answer as a page reads a PublicKeyCredential: byte strings as ArrayBuffers, and its methods.
+      const credential = (c) => {
+        const r = c.response; const made = typeof r.attestationObject === 'string'
+        const response = made
+          ? { clientDataJSON: buf(r.clientDataJSON), attestationObject: buf(r.attestationObject), getAuthenticatorData: () => buf(r.authenticatorData), getPublicKey: () => (r.publicKey ? buf(r.publicKey) : null), getPublicKeyAlgorithm: () => r.publicKeyAlgorithm, getTransports: () => (r.transports || []).slice() }
+          : { clientDataJSON: buf(r.clientDataJSON), authenticatorData: buf(r.authenticatorData), signature: buf(r.signature), userHandle: r.userHandle ? buf(r.userHandle) : null }
+        const json = made
+          ? { clientDataJSON: r.clientDataJSON, attestationObject: r.attestationObject, authenticatorData: r.authenticatorData, publicKey: r.publicKey || undefined, publicKeyAlgorithm: r.publicKeyAlgorithm, transports: r.transports || [] }
+          : { clientDataJSON: r.clientDataJSON, authenticatorData: r.authenticatorData, signature: r.signature, userHandle: r.userHandle || undefined }
+        return {
+          id: c.id, rawId: buf(c.rawId), type: 'public-key', authenticatorAttachment: c.authenticatorAttachment || null, response,
+          getClientExtensionResults: () => ({}),
+          toJSON: () => ({ id: c.id, rawId: c.rawId, type: 'public-key', authenticatorAttachment: c.authenticatorAttachment || undefined, response: json, clientExtensionResults: {} }),
+        }
+      }
+      const through = (kind) => function (options) {
+        const publicKey = options && options.publicKey
+        // Anything that is not a plain public-key request — a password, an autofill offer, nothing — is Chromium's.
+        if (!publicKey || typeof publicKey !== 'object' || options.mediation === 'conditional') return chromium[kind](options)
+        return (async () => {
+          let request = null
+          try { request = wire(publicKey) } catch {}
+          if (request === null) return chromium[kind](options)   // malformed: Chromium says how, in its own words
+          const answer = await ask(kind, request)
+          if (answer && answer.native === true) return chromium[kind](options)
+          if (answer && answer.credential) return credential(answer.credential)
+          const refused = (answer && answer.error) || {}
+          const message = refused.message || 'The operation either timed out or was not allowed.'
+          throw refused.name === 'TypeError' ? new TypeError(message) : new DOMException(message, refused.name || 'NotAllowedError')
+        })()
+      }
+      // THE HOUSE'S CEREMONY PAGE WARNS WHEN THESE ARE NOT NATIVE CODE — how it catches a browser extension that
+      // swallowed a ceremony (greenhouse evidence/0519). Here it is the client itself that answers, and the warning
+      // would be false, on screen, beside the Desktop's own PIN window. A bound function reads as native code, so
+      // these are bound; decisions/0568 names this for what it is and leaves the other way to Rod.
+      const define = (name, value) => Object.defineProperty(CredentialsContainer.prototype, name, { value, writable: true, enumerable: true, configurable: true })
+      define('create', through('create').bind(container)); define('get', through('get').bind(container))
+    },
+    args: [ask],
+  })
+}

@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # Run the Milpa Desktop smoke tests with the resolved Electron binary — under xvfb on a headless Linux box: the
 # workspace renderer (smoke.js), then the boot screen the window shows while the house comes up (smoke-boot.js),
-# then the window's own keys and menu on a web page (smoke-window.js). --no-sandbox goes on the command line: appended
+# then the window's own keys and menu on a web page (smoke-window.js), then a passkey ceremony with a security key
+# that asks for a PIN (smoke-key.js). --no-sandbox goes on the command line: appended
 # from the script it arrives after the renderer's sandbox is set up, and an http page then cannot get shared memory.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ELECTRON="$(node -p 'require("electron")')"
@@ -10,7 +11,10 @@ status=0
 node "$DIR/test/choose-image.js" || status=1
 # Where the house's pages open — this window or the browser — and that every module main.js loads is packaged.
 node "$DIR/test/open-where.js" || status=1
-for SMOKE in "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-window.js"; do
+# A security key that asks for a PIN: the PIN's math against Yubico's, the wire, the ceremony — against a key that
+# is a process, never a real one (greenhouse decisions/0568).
+node "$DIR/test/security-key.js" || status=1
+for SMOKE in "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-window.js" "$DIR/test/smoke-key.js"; do
   if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ]; then
     xvfb-run -a --server-args='-screen 0 1320x840x24' "$ELECTRON" --no-sandbox "$SMOKE" || status=1
   else

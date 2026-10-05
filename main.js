@@ -74,10 +74,18 @@ const CTX = process.env.MILPA_AGENT_CONTEXT_TOKENS || ''
 const ctxEnv = () => CTX ? ['-e', `MILPA_AGENT_CONTEXT_TOKENS=${CTX}`] : []
 // The panel (milpa/admin), through its sign-in: the passkey sign-in is a session cookie, so it ends with whatever
 // holds it, and a panel opened with nobody signed in offers no way in. One touch of the passkey per launch — never a
-// gpg signature. WHERE it opens is the person's choice (greenhouse decisions/0566): this window cannot ask for a
-// security key's PIN, so the boot screen offers the browser first and this window second (open-where.js).
+// gpg signature. WHERE it opens is the person's choice (greenhouse decisions/0566): the boot screen offers this window
+// and the browser (open-where.js). A security key's PIN is asked by the Desktop itself where it can reach the key
+// (decisions/0568, KEY_PIN below); where it cannot, the browser is the first offer.
 const PANEL_URL = `${PASSKEY_ORIGIN}/milpa/admin`
 const SIGNIN_URL = `${PASSKEY_ORIGIN}/webauthn/signin?next=${encodeURIComponent('/milpa/admin')}`
+// WHAT A WINDOW THAT SHOWS THE HOUSE IS GIVEN (greenhouse decisions/0568). The one preload, told which origin is the
+// house: on the Desktop's own file: pages it exposes the bridge; on a page of the house it exposes nothing of that —
+// only a `navigator.credentials` that can ask for a security key's PIN, which Chromium in Electron cannot.
+// Whether this window can ask for a security key's PIN: where the Desktop can reach the key itself — Linux, through
+// hidraw (security-key/hid.js). Elsewhere it cannot yet, and the boot screen keeps the browser first (decisions/0566).
+const KEY_PIN = process.platform === 'linux'
+const HOUSE_PAGE = { preload: path.join(__dirname, 'preload.js'), additionalArguments: [`--milpa-house=${PASSKEY_ORIGIN}`] }
 // What the window shows while it is not the panel yet — read by the boot screen through `milpa:boot`.
 const BOOT = { phase: 'starting', error: null, panel: false }
 let win = null
@@ -200,7 +208,7 @@ handle('milpa:passkey', async (_e, { kind, session: sid, operation, args } = {})
     const w = new BrowserWindow({
       width: 460, height: 520, title: kind === 'intent' ? 'Approve operation' : 'Register a passkey',
       backgroundColor: '#ffffff', autoHideMenuBar: true,
-      webPreferences: { contextIsolation: true, nodeIntegration: false },
+      webPreferences: { ...HOUSE_PAGE, contextIsolation: true, nodeIntegration: false },
     })
     await w.loadURL(url)
     return { opened: true, url }
@@ -464,6 +472,13 @@ handle('milpa:signOp', async (_e, { op, args } = {}) => {
   const { err, out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', op, ...flags, '--sign', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: !err, raw: (out || String(err)).slice(-2000) } }
 })
+// ── a security key that asks for a PIN (greenhouse decisions/0568) ──────────────────────────────────────────────
+// The house requires user verification, a key without a fingerprint reader gives it by PIN, and the PIN is asked by
+// the client — which Electron's Chromium is not (evidence/1100; still so in Electron 44). So the Desktop is: it talks
+// to the key and asks for the PIN in its own window. One channel, for the top frame of a page of this house, giving
+// what `navigator.credentials` gives; it is not the bridge above, and it is refused to everybody else.
+require('./security-key/desk.js').attach({ ipcMain, BrowserWindow, house: PASSKEY_ORIGIN, root: __dirname })
+
 // ── capabilities: what the app can do, and enabling more (a signed, app-changing act) ────────────
 handle('milpa:capabilities', async () => {
   const { out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'capabilities', '--json'])
@@ -521,7 +536,7 @@ handle('milpa:boot', async () => {
   if (BOOT.phase === 'up' && !BOOT.panel) BOOT.panel = await panelServed()
   const run = `${TERMINAL} php bin/coa`
   return {
-    ...BOOT, origin: PASSKEY_ORIGIN, panelUrl: SIGNIN_URL, container: BOOT.phase === 'starting' ? null : NAME, image: IMAGE, server: SERVER,
+    ...BOOT, origin: PASSKEY_ORIGIN, panelUrl: SIGNIN_URL, keyPin: KEY_PIN, container: BOOT.phase === 'starting' ? null : NAME, image: IMAGE, server: SERVER,
     commands: { run, panel: `${run} capabilities:enable milpa/admin --sign` },
   }
 })
@@ -535,7 +550,7 @@ handle('milpa:openInWindow', async (_e, url) => {
   win.loadURL(target.href)
   return { ok: true }
 })
-// …or in the person's browser, which can ask for a security key's PIN where this window cannot (decisions/0566).
+// …or in the person's browser — the other door, and the one for a key with a PIN where the Desktop cannot ask for it.
 // The same check: only a link of this house is handed to the system. The window stays on the boot screen.
 handle('milpa:openInBrowser', async (_e, url) => {
   const target = openWhere.linkOfThisHouse(url, PASSKEY_ORIGIN)
@@ -550,7 +565,7 @@ function keepOnTheHouse (w) {
   w.webContents.on('will-navigate', (e, u) => { if (!ours(u)) { e.preventDefault(); shell.openExternal(u) } })
   w.webContents.setWindowOpenHandler(({ url: u }) => {
     if (!ours(u)) { shell.openExternal(u); return { action: 'deny' } }
-    return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true } }
+    return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, webPreferences: { ...HOUSE_PAGE, contextIsolation: true, nodeIntegration: false } } }
   })
 }
 
@@ -560,11 +575,11 @@ app.whenReady().then(async () => {
   win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1024, minHeight: 680,
     title: 'Milpa Desktop', backgroundColor: '#17120D',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: { ...HOUSE_PAGE, contextIsolation: true, nodeIntegration: false },
   })
   keepOnTheHouse(win)
   // The window is remembered as the place for the panel once the panel is IN it — a sign-in finished here — not when
-  // it was merely asked for: a key with a PIN never gets past the sign-in in this window (greenhouse decisions/0566).
+  // it was merely asked for: a sign-in that did not finish here must not become the next launch's dead end (decisions/0566).
   win.webContents.on('did-navigate', (_e, url) => { if (openWhere.isThePanel(url, PANEL_URL)) openWhere.remember(app.getPath('userData'), 'window') })
   win.loadFile(path.join(__dirname, 'renderer', 'boot.html'))
   try {
@@ -573,7 +588,7 @@ app.whenReady().then(async () => {
     BOOT.panel = await panelServed()
     // A house that already serves its panel (MILPA_KEEP_BACKEND, a restart of the window) opens it straight away FOR
     // SOMEBODY WHO CHOSE THIS WINDOW BEFORE. Anybody else stays on the boot screen, which offers the browser and the
-    // window: a sign-in put here by itself is one a key with a PIN cannot answer (greenhouse decisions/0566).
+    // window (greenhouse decisions/0566).
     if (openWhere.opensTheWindowAtLaunch(openWhere.recall(app.getPath('userData')), BOOT.panel)) { BOOT.phase = 'opening'; win.loadURL(SIGNIN_URL) }
   } catch (e) {
     BOOT.phase = 'failed'

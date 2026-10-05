@@ -11,8 +11,8 @@
 
 A native desktop shell for the [Milpa](https://github.com/getmilpa) agent. The backend is a real Milpa app running
 in a Docker container, and the window is that house's own panel: a local boot screen while the house comes up, then
-the panel at the origin the Desktop declared to it, where you sign in with your passkey — in your browser when your
-security key asks for a PIN, which this window cannot ask for, or in the window itself. The Electron **main process**
+the panel at the origin the Desktop declared to it, where you sign in with your passkey — in the window itself, which
+asks for a security key's PIN in a dialog of its own (Linux), or in your browser. The Electron **main process**
 owns the container's lifecycle, driving the agent and identity/key custody; it holds no credential of its own.
 
 Beyond the agent board, the window carries a **live preview pane**: type the name of a screen the agent
@@ -55,13 +55,22 @@ served by `php -S` with several workers, and the UI polls the session instead.
   passkey sign-in is what the house judges (evidence/1091). It declares two facts to the house it serves: the origin a
   passkey sees (`MILPA_PASSKEY_ORIGINS`) and how a person reaches its terminal (`MILPA_CLI_PREFIX`), so the commands
   the house prints run as printed. The bridge is exposed only to the Desktop's own `file://` pages, never to the panel.
-- **open-where.js** — where the house's pages open: the person's browser, or this window. Electron ships Chromium's
-  WebAuthn without its dialogs, so this window cannot ask for a security key's PIN, and the house requires user
-  verification at enrollment and at every sign-in: a key that verifies by PIN (a YubiKey 5) does not answer here
-  (greenhouse decisions/0566). The boot screen offers the browser first and the window second, remembers the choice,
-  and opens the panel in the window by itself only for somebody whose key got them into the panel there before.
+- **open-where.js** — where the house's pages open: this window, or the person's browser. The boot screen offers
+  both — the window first where the Desktop can ask for a security key's PIN, the browser first where it cannot —
+  remembers the choice, and opens the panel in the window by itself only for somebody whose key got them into the
+  panel there before (greenhouse decisions/0566).
+- **security-key/** — a passkey ceremony with a security key that asks for a PIN (greenhouse decisions/0568).
+  Electron ships Chromium's WebAuthn without its dialogs, so Chromium here cannot ask for a key's PIN, and the house
+  requires user verification at enrollment and at every sign-in. The Desktop does it instead: `hid.js` finds the keys
+  and speaks CTAPHID to them over Linux `hidraw` (plain file reads and writes, no native module), `pin.js` is how a
+  PIN travels (compared byte for byte with Yubico's python-fido2), `ctap.js` what is said to a key, `ceremony.js` the
+  ceremony — which never sends a refused PIN again — and `desk.js` who may ask (the top frame of a page of the house)
+  and the window that asks for the PIN (`renderer/key.html`, `preload-key.js`). A ceremony no key needs a PIN for is
+  left to Chromium. `MILPA_SECURITY_KEYS=<path>[,<path>]` names the keys instead of looking for them. Linux only:
+  on macOS the window behaves as before and the browser is the first offer.
 - **preload.js** — the narrow bridge: `milpa:component` (fetch a rendered component) and `milpa:live` (the
-  live wire). Nothing else crosses.
+  live wire). Nothing else crosses. A page of the house gets none of it — only a `navigator.credentials` that asks
+  the Desktop first, so that a key's PIN can be asked.
 - **window-chrome.js** — the window's own keys and menu, since it shows a web page and has no native menu: reload
   (`Ctrl/Cmd+R`, `F5`; with `Shift`, past the cache), back and forward (`Alt+←`, `Alt+→`), devtools
   (`Ctrl/Cmd+Shift+I`), and a right-click menu that offers Back, Forward and Reload by name — and, on a page of the

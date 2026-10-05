@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milpa Desktop</title>
+<link rel="stylesheet" href="ds/fonts.css">
+<link rel="stylesheet" href="ds/tokens/milpa-tokens.css">
+<link rel="stylesheet" href="ds/_ds_bundle.css">
+<style>
+  [hidden]{display:none!important}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font-body)}
+  .key{box-sizing:border-box;min-height:100%;padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-4)}
+  .key h1{font-family:var(--font-heading);font-size:var(--text-2xl);line-height:1.1;margin:0}
+  .key p{margin:0}
+  .dv-note{font-family:var(--font-mono);font-size:var(--text-2xs);line-height:1.4;color:var(--text-muted);letter-spacing:.02em}
+  .key .who{font-family:var(--font-mono);font-size:var(--text-xs);overflow-wrap:anywhere}
+  .key .left{font-size:var(--text-sm)}
+  .key .left[data-low="true"]{color:var(--danger,#E5484D);font-weight:600}
+  .key form{display:flex;flex-direction:column;gap:var(--space-2)}
+  .key .actions{margin-top:auto;justify-content:flex-end}
+</style>
+</head>
+<body>
+<!-- The Desktop's own window for a ceremony with a security key that asks for a PIN (greenhouse decisions/0568).
+     Every word comes from the catalog; what it shows is what main says the ceremony is doing. -->
+<main class="key" id="key" data-step="">
+  <div>
+    <p class="mui-section__kicker" style="margin:0 0 var(--space-2)" data-i18n="key.kicker">security key</p>
+    <h1 id="key-title"></h1>
+  </div>
+  <p class="who" id="key-who"></p>
+  <p id="key-step" role="status"></p>
+  <form id="key-form" hidden autocomplete="off">
+    <label for="key-pin" data-i18n="key.pin.label">PIN of your security key</label>
+    <input id="key-pin" class="mui-input" type="password" autocomplete="off" spellcheck="false" autocapitalize="off">
+    <p class="left" id="key-left"></p>
+    <p class="dv-note" data-i18n="key.pin.note">The PIN goes from this window to your key. The page never sees it, and Milpa Desktop does not keep it.</p>
+  </form>
+  <div class="mui-alert mui-alert--danger" role="alert" id="key-problem" hidden><span class="mui-alert__icon">!</span><div class="mui-alert__content"><p class="mui-alert__desc" id="key-problem-text"></p></div></div>
+  <div class="mui-cluster mui-cluster--sm actions">
+    <button type="button" class="mui-btn mui-btn--secondary" id="key-close" data-i18n="key.cancel">Cancel</button>
+    <button type="submit" form="key-form" class="mui-btn mui-btn--primary" id="key-go" data-i18n="key.continue" hidden>Continue</button>
+  </div>
+</main>
+<script src="i18n.js"></script>
+<script src="key.js"></script>
+</body>
+</html>

@@ -1,13 +1,12 @@
 // Where the house's pages open: this window, or the person's browser (greenhouse decisions/0566) — out of main.js so
 // it can be exercised without Electron.
 //
-// THIS WINDOW CANNOT ASK FOR A SECURITY KEY'S PIN. Electron ships Chromium's WebAuthn without its dialogs: no PIN
-// prompt, so a key that verifies its user by PIN — a YubiKey 5 — is discarded by a ceremony that requires user
-// verification, and the page reads «The operation either timed out or was not allowed» (evidence/1100). The house
-// requires it, at enrollment and at every sign-in. So the Desktop offers the browser, where the PIN is asked, and
-// remembers where the panel was last opened: a launch opens it in the window by itself only for somebody whose key
-// got them INTO the panel in this window before — a key with a fingerprint reader does. Asking for the window is
-// not that: a sign-in that never finished here must not become the next launch's dead end.
+// WHY THERE ARE TWO PLACES. Electron ships Chromium's WebAuthn without its dialogs — no PIN prompt — so a key that
+// verifies its user by PIN, a YubiKey 5, could not answer a ceremony of the house in this window (evidence/1100). The
+// Desktop now asks for that PIN itself where it can reach the key (decisions/0568: Linux); the browser stays the other
+// door, and the first one where the Desktop cannot. What is remembered is where the panel was last opened: a launch
+// opens it in the window by itself only for somebody whose key got them INTO the panel in this window before. Asking
+// for the window is not that: a sign-in that never finished here must not become the next launch's dead end.
 //
 // (c) Rodrigo Vicente - TeamX Agency — Apache-2.0
 const fs = require('node:fs')
