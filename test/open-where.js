@@ -43,10 +43,20 @@ if (where) {
 }
 
 // A module main.js loads and the build does not pack is a Desktop that starts from source and dies as an AppImage.
+// The same for a preload a window is given, and for a directory of modules (`security-key/`, packed whole).
 const packed = require('../package.json').build.files
-const loaded = [...fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8').matchAll(/require\('\.\/([\w-]+\.js)'\)/g)].map(m => m[1])
-const unpacked = loaded.filter(f => !packed.includes(f))
-record('every module main.js loads is in the build\'s files — ' + loaded.join(', '), loaded.includes('open-where.js') && unpacked.length === 0, 'not packed: ' + unpacked.join(', '))
+const isPacked = (f) => packed.includes(f) || packed.includes(f.split('/')[0] + '/**/*')
+const ROOT = path.join(__dirname, '..')
+const sources = ['main.js', ...fs.readdirSync(path.join(ROOT, 'security-key')).map(f => 'security-key/' + f)]
+const loaded = [...new Set(sources.flatMap((file) => {
+  const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
+  const required = [...text.matchAll(/require\('(\.\/[\w./-]+\.js)'\)/g)].map(m => path.posix.normalize(path.posix.join(path.posix.dirname(file), m[1])))
+  const preloads = [...text.matchAll(/(?:__dirname|root), '([\w-]+\.js)'\)/g)].map(m => m[1])
+  return [...required, ...preloads]
+}))]
+const unpacked = loaded.filter(f => !isPacked(f))
+const missing = loaded.filter(f => !fs.existsSync(path.join(ROOT, f)))
+record('every module and preload the Desktop loads exists and is in the build\'s files — ' + loaded.join(', '), ['open-where.js', 'preload.js', 'preload-key.js', 'security-key/desk.js', 'security-key/ceremony.js'].every(f => loaded.includes(f)) && unpacked.length === 0 && missing.length === 0, 'not packed: ' + unpacked.join(', ') + ' · missing: ' + missing.join(', '))
 
 const failed = checks.filter(c => !c.ok)
 console.log('\n' + (checks.length - failed.length) + '/' + checks.length + ' open-where checks passed')

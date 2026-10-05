@@ -84,11 +84,22 @@ app.whenReady().then(async () => {
     record('«Open here» still opens it in the window', JSON.stringify(await js('window.milpa.bootOpened()')) === JSON.stringify([LINK]) && (await js('window.milpa.bootBrowsed().length')) === 1)
     record('the screen says why: a key that asks for a PIN works in the browser, not in this window', /PIN/.test(await text()) && /browser/.test(await text()))
 
+    // decisions/0568: where the Desktop asks for a security key's PIN itself, the window is the first offer.
+    const primary = () => js("[...document.querySelectorAll('#boot-paste .mui-btn--primary, #boot-ready .mui-btn--primary')].filter(b => !b.closest('[hidden]')).map(b => b.id).join()")
+    record('where this window cannot ask for a PIN, the browser is the first offer', (await primary()) === 'boot-open')
+    await js("window.milpa.bootSet({ keyPin: true })"); await tick()
+    record('where it can, the window is — and the screen says the PIN is asked here and never shown to the page', (await primary()) === 'boot-open-here' && /this window asks for the PIN itself/.test(await text()) && !/cannot ask for the PIN/.test(await text()), await primary())
+    const before = await js('window.milpa.bootOpened().length')
+    await type('#boot-link', LINK); await win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' }); await win.webContents.sendInputEvent({ type: 'char', keyCode: 'Enter' }); await win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' }); await sleep(250)
+    record('…and Enter in the paste box opens the link here', (await js('window.milpa.bootOpened().length')) === before + 1 && (await js('window.milpa.bootBrowsed().length')) === 1)
+    await js("window.milpa.bootSet({ keyPin: false })"); await tick()
+
     await js("window.milpa.bootSet({ phase: 'up', panel: true })"); await tick()
     record('panel enabled: «Open the panel in your browser» is offered', await visible('#boot-panel'))
     record('panel enabled: the paste box STAYS — enabling the panel is what prints the one-time link', await visible('#boot-link'))
+    const inWindow = await js('window.milpa.bootOpened().length')
     await js("document.querySelector('#boot-panel').click()"); await sleep(200)
-    record('«Open the panel in your browser» opens the house\'s sign-in, back to the panel, in the browser', (await js('window.milpa.bootBrowsed()')).pop() === 'http://localhost:8899/webauthn/signin?next=%2Fmilpa%2Fadmin' && (await js('window.milpa.bootOpened().length')) === 1)
+    record('«Open the panel in your browser» opens the house\'s sign-in, back to the panel, in the browser', (await js('window.milpa.bootBrowsed()')).pop() === 'http://localhost:8899/webauthn/signin?next=%2Fmilpa%2Fadmin' && (await js('window.milpa.bootOpened().length')) === inWindow)
     await js("document.querySelector('#boot-panel-here').click()"); await sleep(200)
     record('«Open it in this window» opens it here', (await js('window.milpa.bootOpened()')).pop() === 'http://localhost:8899/webauthn/signin?next=%2Fmilpa%2Fadmin')
 

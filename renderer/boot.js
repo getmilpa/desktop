@@ -22,6 +22,16 @@
     paintFound()
     $('#cmd-panel').textContent = st.commands.panel
     $('#boot-link').setAttribute('placeholder', tr('boot.paste.placeholder', { origin: st.origin }))
+    // WHICH DOOR COMES FIRST (greenhouse decisions/0568). Where the Desktop can ask for a security key's PIN itself
+    // (`keyPin`: Linux), the window is the first offer and the browser the other; where it cannot, the browser stays
+    // first, as decisions/0566 left it.
+    const here = st.keyPin === true
+    root.dataset.keyPin = String(here)
+    $('#boot-key-note').textContent = tr(here ? 'boot.key.note.here' : 'boot.key.note')
+    for (const [browser, win] of [['#boot-open', '#boot-open-here'], ['#boot-panel', '#boot-panel-here']]) {
+      $(browser).classList.toggle('mui-btn--primary', !here); $(browser).classList.toggle('mui-btn--secondary', here)
+      $(win).classList.toggle('mui-btn--primary', here); $(win).classList.toggle('mui-btn--secondary', !here)
+    }
     $('#boot-container').textContent = st.container ? tr('boot.container', { name: st.container, image: st.image, server: st.server }) : ''
   }
 
@@ -44,7 +54,8 @@
       : tr('boot.found.incomplete')
   }
 
-  // Where a link of this house opens: 'browser' — which can ask for a security key's PIN — or 'window'.
+  // Where a link of this house opens: 'browser' or 'window'. A security key's PIN is asked in the browser always, and
+  // in the window where the Desktop can ask for it (`keyPin`, greenhouse decisions/0568).
   async function open (url, where) {
     const err = $('#boot-link-error')
     let same = false
@@ -59,7 +70,7 @@
   $('#found-objective').addEventListener('input', paintFound)
   $('#boot-open').addEventListener('click', () => open($('#boot-link').value.trim(), 'browser'))
   $('#boot-open-here').addEventListener('click', () => open($('#boot-link').value.trim(), 'window'))
-  $('#boot-link').addEventListener('keydown', (e) => { if (e.key === 'Enter') open($('#boot-link').value.trim(), 'browser') })
+  $('#boot-link').addEventListener('keydown', (e) => { if (e.key === 'Enter') open($('#boot-link').value.trim(), last && last.keyPin === true ? 'window' : 'browser') })
   $('#boot-panel').addEventListener('click', () => open(last.panelUrl, 'browser'))
   $('#boot-panel-here').addEventListener('click', () => open(last.panelUrl, 'window'))
   window.addEventListener('milpa:locale', () => last && paint(last))

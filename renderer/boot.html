@@ -19,6 +19,9 @@
   .boot code[data-ready="false"]{font-family:var(--font-body);color:var(--text-muted);border-style:dashed;user-select:none}
   .boot .found-fields{display:grid;grid-template-columns:max-content 1fr;gap:var(--space-2) var(--space-3);align-items:center;margin:var(--space-2) 0}
   .boot .found-fields label{font-size:var(--text-xs);color:var(--text-muted)}
+  /* where this window asks for a security key's PIN itself, it is the first offer (greenhouse decisions/0568) */
+  [data-key-pin="true"] #boot-open-here,[data-key-pin="true"] #boot-panel-here{order:-1}
+  [data-key-pin="true"] #boot-link{order:-2}
   /* the loader: the M germinating from its grains (milpa-design), the same mark the workspace boots with */
   @keyframes milpa-germina {
     0%   { opacity: 0; transform: translateY(7px) scale(0.15); }
@@ -67,7 +70,7 @@
     <label for="boot-link" data-i18n="boot.step.paste">To register this device, paste the one-time link that command printed:</label>
     <div class="mui-cluster mui-cluster--sm" style="flex-wrap:nowrap;margin-top:var(--space-2)"><input id="boot-link" class="mui-input" style="flex:1;font-family:var(--font-mono);font-size:var(--text-xs)" autocomplete="off" spellcheck="false"><button type="button" class="mui-btn mui-btn--primary" id="boot-open" data-i18n="boot.paste.open">Open in your browser</button><button type="button" class="mui-btn mui-btn--secondary" id="boot-open-here" data-i18n="boot.paste.here">Open here</button></div>
     <p class="dv-note" id="boot-link-error" role="status" hidden></p>
-    <!-- Why the browser comes first (greenhouse decisions/0566, evidence/1100). -->
+    <!-- Which door comes first, and why (greenhouse decisions/0566 and 0568): boot.js picks the sentence. -->
     <p class="dv-note" id="boot-key-note" data-i18n="boot.key.note">A security key that asks for a PIN works in your browser. This window cannot ask for the PIN, so the key would not answer here; a key with a fingerprint reader works in both.</p>
   </section>
   <p class="dv-note" id="boot-container"></p>

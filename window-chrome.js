@@ -6,9 +6,9 @@
 // Rod click «Agent» and pick the session again, three times a run). So the keys a browser answers to are here, and
 // the right-click menu offers them by name.
 //
-// AND THE WAY TO THE BROWSER (greenhouse decisions/0566). This window cannot ask for a security key's PIN, so a
-// passkey ceremony of the house can be one it is unable to finish (evidence/1100). The menu offers the page the
-// window is on to the person's browser, where it can be.
+// AND THE WAY TO THE BROWSER (greenhouse decisions/0566). A passkey ceremony of the house can be one this window is
+// unable to finish — a key with a PIN where the Desktop cannot ask for it (evidence/1100; decisions/0568 covers
+// Linux). The menu offers the page the window is on to the person's browser, where it can be.
 //
 // This is chrome of the WINDOW, in the main process. It hands the page nothing: the bridge stays where preload.js
 // puts it — on the Desktop's own file: pages, never on an http page.
