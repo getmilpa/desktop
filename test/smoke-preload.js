@@ -1,7 +1,7 @@
 // Fixture window.milpa for the headless smoke test — canned data, no container.
 const { contextBridge } = require('electron')
 let statusCalls = 0
-const FP = 'EAA59B1626D01F30E3DE271F9F5DBDDDD9BF7CE1'
+const FP = 'AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555'
 // Scenarios keyed by `mode`: parked, a resolved but unverified closure, and a verified closure.
 let mode = 'parked'
 const unverifiedClosure = { verified: false, reasons: ['5 todos open'] }
