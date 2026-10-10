@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'">
+<title>Approve a signature</title>
+<link rel="stylesheet" href="ds/fonts.css">
+<link rel="stylesheet" href="ds/tokens/milpa-tokens.css">
+<link rel="stylesheet" href="ds/_ds_bundle.css">
+<style>
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font-body);display:flex;flex-direction:column}
+  main{flex:1;overflow:auto;padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-4)}
+  h1{font-size:var(--text-lg);margin:0}
+  p.lede{margin:0;color:var(--text-muted);font-size:var(--text-sm)}
+  .op{font-family:var(--font-mono);font-size:var(--text-base);font-weight:600;overflow-wrap:anywhere}
+  dl{display:grid;grid-template-columns:max-content 1fr;gap:var(--space-2) var(--space-3);margin:0}
+  dt{color:var(--text-muted);font-size:var(--text-xs)}
+  dd{margin:0;font-family:var(--font-mono);font-size:var(--text-xs);overflow-wrap:anywhere}
+  details{border:1px solid var(--border);border-radius:var(--radius-base);background:var(--surface)}
+  summary{cursor:pointer;padding:var(--space-2) var(--space-3);font-size:var(--text-xs);color:var(--text-muted)}
+  pre{margin:0;padding:var(--space-3);font-family:var(--font-mono);font-size:var(--text-2xs);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;border-top:1px solid var(--border)}
+  footer{display:flex;gap:var(--space-3);padding:var(--space-4) var(--space-5);border-top:1px solid var(--border)}
+  footer button{flex:1;padding:var(--space-3);border-radius:var(--radius-base);border:1px solid var(--border);font-family:var(--font-body);font-size:var(--text-sm);cursor:pointer}
+  #deny{background:var(--surface);color:var(--text)}
+  #approve{background:var(--accent,#7bb661);color:#0b0b0b;border-color:transparent;font-weight:600}
+</style>
+</head>
+<body>
+  <main>
+    <h1>Approve a signature</h1>
+    <p class="lede">The house asked to sign this operation. It holds no key — your key signs here, on your host, only if you approve. This is what will be signed:</p>
+    <div class="op" id="op">—</div>
+    <dl>
+      <dt>arguments</dt><dd id="args">—</dd>
+      <dt>house</dt><dd id="host">—</dd>
+      <dt>stamped at</dt><dd id="issuedAt">—</dd>
+      <dt>nonce</dt><dd id="nonce">—</dd>
+    </dl>
+    <details>
+      <summary>Exact bytes to be signed</summary>
+      <pre id="canonical">—</pre>
+    </details>
+  </main>
+  <footer>
+    <button id="deny" type="button">Don't sign</button>
+    <button id="approve" type="button">Approve &amp; sign</button>
+  </footer>
+  <script src="sign-approval.js"></script>
+</body>
+</html>

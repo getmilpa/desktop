@@ -21,4 +21,19 @@ for SMOKE in "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-win
     "$ELECTRON" --no-sandbox "$SMOKE" || status=1
   fi
 done
+# The host signer (greenhouse decisions/0611): the person's key signs on the host, the container only verifies. Unlike
+# the other smokes (which fake docker), this one needs a REAL container, so it runs only where Docker and the framework
+# image are present — skipped cleanly otherwise. It uses lab keys (ed25519, disable-scdaemon) in throwaway keyrings and
+# a --network none container; it never touches a real keyring, pcscd, or card. MILPA_APP_RUNTIME_SRC overlays a local
+# app-runtime (needed only until the image ships #789's RemoteOperationSigner).
+SIGN_IMG="${MILPA_LAB_IMAGE:-ghcr.io/getmilpa/framework:dev}"
+if command -v docker >/dev/null 2>&1 && docker image inspect "$SIGN_IMG" >/dev/null 2>&1; then
+  if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ]; then
+    xvfb-run -a --server-args='-screen 0 1320x840x24' "$ELECTRON" --no-sandbox "$DIR/test/smoke-sign.js" || status=1
+  else
+    "$ELECTRON" --no-sandbox "$DIR/test/smoke-sign.js" || status=1
+  fi
+else
+  echo "SKIP · host signer measure (greenhouse decisions/0611) — needs Docker and the framework image ($SIGN_IMG)"
+fi
 exit $status
