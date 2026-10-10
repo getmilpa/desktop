@@ -34,11 +34,12 @@ function provisionPublicKeyring ({ container, hostGnupg, gpg = 'gpg' }) {
   if (hasPub) {
     try { execFileSync('docker', ['exec', '-i', container, 'gpg', '--batch', '--import'], { input: pub, stdio: ['pipe', 'ignore', 'ignore'] }) } catch {}
   }
+  // -1 means the check could not run — NOT "0 secrets". An empty result is not a fact (0611 review).
   let secret = -1
   try {
     const out = execFileSync('docker', ['exec', container, 'gpg', '--list-secret-keys', '--with-colons'], { encoding: 'utf8' })
     secret = (out || '').split('\n').filter((l) => l.startsWith('sec')).length
-  } catch { secret = 0 }
+  } catch { secret = -1 }
   return { secret, provisioned: hasPub }
 }
 

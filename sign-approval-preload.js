@@ -8,9 +8,12 @@ const arg = (p) => { const a = process.argv.find((x) => x.startsWith(p)); return
 let authz = {}
 try { authz = JSON.parse(decodeURIComponent(arg('--authz='))) } catch {}
 const token = arg('--token=')
+const deadline = Number(arg('--deadline=')) || 0
 
 contextBridge.exposeInMainWorld('approval', {
   data: () => authz,
+  // When the window must refuse itself (the deadline the main enforces, shown here so the person sees it coming).
+  deadline: () => deadline,
   approve: () => ipcRenderer.send('milpa:sign-approval', { token, ok: true }),
   deny: () => ipcRenderer.send('milpa:sign-approval', { token, ok: false }),
 })

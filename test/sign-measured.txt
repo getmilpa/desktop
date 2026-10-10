@@ -1,27 +1,33 @@
 # greenhouse decisions/0611 (b) — the Desktop host signer, measured under xvfb (evidence/1183 Desktop side)
-# instrument: test/smoke-sign.js  ·  electron v38.1.2  ·  host: Linux, lab keys (ed25519, disable-scdaemon)
-# the person's private key is on the host only; the container holds the public key only; container is --network none.
+# instrument: test/smoke-sign.js + sign-probe.php + freshness-probe.php  ·  electron v38.1.2  ·  Linux, lab keys (ed25519, disable-scdaemon)
+# the person's private key is on the host only, in a NEW keyring no container saw; the container holds the public key only; --network none.
+# the token travels in argv (the preload reads --token= and its own-button approval round-trips it); /proc visibility is best-effort.
 #
 PASS · the person's private key is on the HOST (1 secret), the seat keyring is a SEPARATE host keyring
 PASS · the approval opens in a window the MAIN owns, separate from any page
 PASS · POINT 1 · the window shows exactly the canonical the host will sign (operation + bytes)
-PASS · POINT 2 · another renderer cannot answer the approval (the pending sign is still unanswered)
-[host-signer] approval granted: capabilities:enable host=labhouse issuedAt=2026-10-10T21:21:31.894Z
-PASS · POINT 2 · only the approval window's own button approves it
+# token in /proc argv (best-effort): false
+PASS · POINT 2 · the one-time token is a fresh 32-hex value carried to the window in its argv
+PASS · POINT 5 · the approval window shows the time it has left (countdown)
+PASS · POINT 2 · another renderer cannot answer even with the REAL token (the sender gate refuses it)
+PASS · POINT 2 · only the approval window's own button approves it — its preload read the token from argv and sent it back
+PASS · POINT 2 · MUTATION: without the sender gate the forged (real-token) message SUCCEEDS — the gate is load-bearing
 PASS · POINT 2 · the house bridge has no approval/sign-approval method, and no node in the page
-# image=ghcr.io/getmilpa/framework:dev id=sha256:f4cbd2f6c9f9640c2f59be608650f192c82c8f7c857ba35f7ee9ce98beea7166 app-runtime-overlay=<local app-runtime src, needed only until the image ships RemoteOperationSigner>
+PASS · BLOCKER control · a planted agent-program in the OLD keyring DOES run on a sign over it (the risk is real)
+PASS · POINT 1 (blocker, CHANGED) · the signer's keyring is NEW and clean — nothing planted in the OLD dir runs
+# image=ghcr.io/getmilpa/framework:dev id=sha256:f4cbd2f6c9f9640c2f59be608650f192c82c8f7c857ba35f7ee9ce98beea7166 app-runtime-overlay=<local app-runtime src, until the image ships RemoteOperationSigner>
 PASS · POINT 5 · no host keyring (/root/.gnupg) is mounted into the container
 PASS · POINT 5 · no /run/pcscd is mounted into the container
 PASS · POINT 5 · MILPA_SIGN_SOCKET is set — the house is told to sign through the host
 PASS · POINT 5 · the host signer's socket is present inside the container
 PASS · POINT 5 · the container holds PUBLIC keys only (0 secret keys)
-[host-signer] approval granted: capabilities:enable host=labhouse issuedAt=2026-10-10T21:21:33.847Z
 PASS · HAPPY · the house got a signature and verified it with its PUBLIC-only keyring
 PASS · POINT 1 · what was signed is the operation that was asked (end to end)
 PASS · POINT 3 · the HOST stamped the time and a nonce (not the house's clock)
-[host-signer] approval granted: capabilities:enable host=labhouse issuedAt=2026-10-10T21:21:33.965Z
 PASS · POINT 3 · a second request is approved and signed afresh — a fresh nonce, never "allow always"
-[host-signer] approval refused: capabilities:enable host=labhouse issuedAt=2026-10-10T21:21:34.078Z
+PASS · POINT 5 · the house accepts the signature at 90s but REJECTS it at 121s (the 120s dead zone is real)
+PASS · POINT 5 · the Desktop window deadline is shorter than the house freshness (90s < 120s, with margin)
+PASS · POINT 5 · an un-answered approval refuses on the window deadline (well under the 120s freshness)
 PASS · POINT 4 · a refused approval comes back to the house as "not signed", with its reason
 PASS · POINT 6 · with no host answering, the house gets no signature, with its reason
-17/17 host-signer checks passed
+25/25 host-signer checks passed

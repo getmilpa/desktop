@@ -21,6 +21,11 @@ const { execFile } = require('node:child_process')
 
 const PROTOCOL_VERSION = 1
 
+// One request per connection, bounded. A hostile house could otherwise send more bytes after the first line (while a
+// person is still deciding) to raise a SECOND approval window for one connection — consent fatigue — or never send a
+// newline at all and grow the buffer without bound (0611 review).
+const MAX_REQUEST_BYTES = 64 * 1024
+
 // The bytes the house verifies and re-canonicalizes (milpa/tool-runtime OperationAuthorization::canonical): every map
 // sorted at every depth, the top level alphabetical, unescaped unicode and slashes — which JSON.stringify already is.
 // The house re-sorts and re-encodes both sides, so this need not be byte-identical with PHP; keeping it the same shape
@@ -60,12 +65,16 @@ function serve ({ socketPath, gnupgHome, approve, gpgBinary = 'gpg' }) {
   const server = net.createServer((conn) => {
     let buf = ''
     let done = false
+    let started = false // one request per connection: once the first line is in, later data cannot raise a 2nd window
     const reply = (obj) => { if (done) return; done = true; try { conn.write(JSON.stringify(obj) + '\n') } catch {} try { conn.end() } catch {} }
     conn.setEncoding('utf8')
     conn.on('data', async (chunk) => {
+      if (started || done) return // ignore anything after the first line — no duplicate approval for one connection
       buf += chunk
+      if (buf.length > MAX_REQUEST_BYTES) return reply({ version: PROTOCOL_VERSION, ok: false, why: 'the request was too large' })
       const nl = buf.indexOf('\n')
-      if (nl < 0 || done) return
+      if (nl < 0) return
+      started = true
       let req
       try { req = JSON.parse(buf.slice(0, nl)) } catch { return reply({ version: PROTOCOL_VERSION, ok: false, why: 'the request could not be read' }) }
       if (req.version !== PROTOCOL_VERSION) return reply({ version: PROTOCOL_VERSION, ok: false, why: 'unsupported protocol version' })

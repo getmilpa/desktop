@@ -52,6 +52,21 @@ function record (name, ok, detail) { checks.push({ ok: !!ok }); console.log((ok 
 
 // find the approval window the main just opened (host-approve.js), by its title
 function approvalWindow () { return BrowserWindow.getAllWindows().find((w) => { try { return !w.isDestroyed() && w.getTitle() === 'Approve a signature' } catch { return false } }) }
+// Is this exact token present in some process's argv (/proc)? Proves the one-time token travels in argv — the main
+// generated it, so we scan for the known value (the renderer's own sandboxed cmdline hides additionalArguments, but
+// the process Electron launches it with carries them).
+function tokenInArgv (token) {
+  if (!token) return false
+  try {
+    for (const pid of fs.readdirSync('/proc')) {
+      if (!/^\d+$/.test(pid)) continue
+      let raw
+      try { raw = fs.readFileSync(`/proc/${pid}/cmdline`, 'latin1') } catch { continue }
+      if (raw.includes('--token=' + token)) return true
+    }
+  } catch {}
+  return false
+}
 
 app.whenReady().then(async () => {
   const W = fs.mkdtempSync(path.join(os.tmpdir(), 'ms0611.')) // short base so the socket path stays < 107 bytes
@@ -60,6 +75,7 @@ app.whenReady().then(async () => {
   const SOCKDIR = path.join(W, 's')   // mounted into the container as /run/milpa
   let server = null
   let FPR = ''
+  let realToken = ''
 
   try {
     // ── 0. lab keyrings + a lab person key (ed25519, no passphrase, no scdaemon) ──────────────────────
@@ -75,7 +91,10 @@ app.whenReady().then(async () => {
 
     // ── 1. the host signer, bound on the socket, with the REAL approval window ─────────────────────────
     const socketPath = signWiring.hostSocketPath(SOCKDIR)
-    const approve = makeApprover({ app, BrowserWindow, ipcMain, root: ROOT, parent: null })
+    // the main generates the one-time token; capture it here (the main may legitimately know it) so the attacker can
+    // be handed the REAL token and the test turns on the SENDER gate, not the token check.
+    let capturedToken = ''
+    const approve = makeApprover({ app, BrowserWindow, ipcMain, root: ROOT, parent: null, onShown: (_a, t) => { capturedToken = t } })
     delete process.env.MILPA_SIGN_AUTODECIDE // the next approval is driven by hand, to inspect the window
     server = hostSigner.serve({ socketPath, gnupgHome: HOST, approve })
     await new Promise((r) => server.once('listening', r))
@@ -94,21 +113,47 @@ app.whenReady().then(async () => {
       const shown = await aw.webContents.executeJavaScript('({ op: window.approval.data().operation, canonical: window.approval.data().canonical, opText: document.querySelector("#op").textContent, canonText: document.querySelector("#canonical").textContent })').catch((e) => ({ err: String(e) }))
       record('POINT 1 · the window shows exactly the canonical the host will sign (operation + bytes)', shown.op === authz.operation && shown.canonical === authz.canonical && shown.opText === authz.operation && shown.canonText === authz.canonical, JSON.stringify(shown).slice(0, 200))
 
-      // POINT 2 · a renderer that is NOT the approval window — what a page the house serves would be — cannot answer,
-      // even holding a leaked token.
+      // POINT 2 · the REAL one-time token (captured from the main) — used so the test turns on the SENDER gate, not
+      // the token check. It travels to the window in its argv: the preload reads `--token=` from process.argv, and the
+      // own-button approval below only succeeds because it sent back that exact value (a /proc note is best-effort).
+      realToken = capturedToken
+      console.log('# token in /proc argv (best-effort): ' + tokenInArgv(realToken))
+      record('POINT 2 · the one-time token is a fresh 32-hex value carried to the window in its argv', /^[0-9a-f]{32}$/.test(realToken), realToken.slice(0, 8))
+      // the window shows how long it has left (POINT 5, countdown)
+      const cd = await aw.webContents.executeJavaScript('document.querySelector("#countdown").textContent').catch(() => '')
+      record('POINT 5 · the approval window shows the time it has left (countdown)', /expires in \d+s/.test(cd), cd)
+
+      // a DIFFERENT renderer — what a page the house serves would be — sends the REAL token: the sender gate must refuse
       const attacker = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'sign-attacker-preload.js'), contextIsolation: true, sandbox: false } })
       await attacker.loadURL('about:blank')
-      await attacker.webContents.executeJavaScript("window.attack.decide('deadbeefdeadbeefdeadbeefdeadbeef', true)").catch(() => {})
+      await attacker.webContents.executeJavaScript(`window.attack.decide(${JSON.stringify(realToken)}, true)`).catch(() => {})
       await sleep(400)
-      const stillOpen = !!approvalWindow()
-      record('POINT 2 · another renderer cannot answer the approval (the pending sign is still unanswered)', stillOpen)
+      record('POINT 2 · another renderer cannot answer even with the REAL token (the sender gate refuses it)', !!approvalWindow())
       try { attacker.close() } catch {}
 
-      // the real window's own button resolves it
+      // the real window's own button resolves it (same token, right sender → accepted)
       await aw.webContents.executeJavaScript('document.querySelector("#approve").click()').catch(() => {})
     }
     const approvedDirect = await Promise.race([pending, sleep(5000).then(() => 'timeout')])
-    record('POINT 2 · only the approval window\'s own button approves it', approvedDirect === true, String(approvedDirect))
+    record('POINT 2 · only the approval window\'s own button approves it — its preload read the token from argv and sent it back', approvedDirect === true, String(approvedDirect))
+
+    // POINT 2 · MUTATION control: remove ONLY the sender gate (a test seam) and the same forged message with the REAL
+    // token MUST now succeed — proving the gate, not the token check, is what refuses the attacker above.
+    process.env.MILPA_SIGN_TEST_ALLOW_ANY_SENDER = '1'
+    const authzM = { ...authz, nonce: 'feedfeedfeedfeedfeedfeedfeedfeed' }
+    authzM.canonical = hostSigner.canonical(authzM.operation, authzM.arguments, authzM.host, authzM.issuedAt, authzM.nonce)
+    const pendingM = approve(authzM)
+    let awM = null
+    for (let i = 0; i < 50 && !awM; i++) { awM = approvalWindow(); if (!awM) await sleep(100) }
+    const atk2 = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'sign-attacker-preload.js'), contextIsolation: true, sandbox: false } })
+    await atk2.loadURL('about:blank')
+    await atk2.webContents.executeJavaScript(`window.attack.decide(${JSON.stringify(capturedToken)}, true)`).catch(() => {})
+    const mutated = await Promise.race([pendingM, sleep(4000).then(() => 'timeout')])
+    record('POINT 2 · MUTATION: without the sender gate the forged (real-token) message SUCCEEDS — the gate is load-bearing', mutated === true, String(mutated))
+    try { atk2.close() } catch {}
+    delete process.env.MILPA_SIGN_TEST_ALLOW_ANY_SENDER
+    // safety: never leave an approval window open (it would block the approver chain for the container signs below)
+    { const lingering = approvalWindow(); if (lingering) { try { lingering.destroy() } catch {} await sleep(150) } }
 
     // POINT 2 · the house page's bridge exposes nothing that could answer or reach the approval
     const housePage = new BrowserWindow({ show: false, webPreferences: { preload: path.join(ROOT, 'preload.js'), additionalArguments: ['--milpa-house=http://localhost:8899'], contextIsolation: true, sandbox: false } })
@@ -116,6 +161,26 @@ app.whenReady().then(async () => {
     const bridge = await housePage.webContents.executeJavaScript('({ keys: Object.keys(window.milpa||{}), hasRequire: typeof window.require, sign: Object.keys(window.milpa||{}).filter(k=>/approv|sign/i.test(k)) })').catch((e) => ({ err: String(e) }))
     record('POINT 2 · the house bridge has no approval/sign-approval method, and no node in the page', Array.isArray(bridge.keys) && bridge.sign.length === 0 && bridge.hasRequire === 'undefined', JSON.stringify(bridge).slice(0, 200))
     try { housePage.close() } catch {}
+
+    // ── POINT 1 BLOCKER (0611 review): the signer's keyring is NEW — it never opens the OLD, once-mounted dir ──────
+    // The old ~/.milpa/gnupg was mounted read-write; its gpg.conf could carry an attacker's `agent-program` that the
+    // host would EXECUTE on the first sign (detachSign runs `gpg --detach-sign` over it). Prove the attack is real on
+    // the OLD dir, then prove the signer, over the NEW keyring, runs nothing planted there.
+    const OLD = path.join(W, 'old'); const MARKER = path.join(W, 'rce-ran')
+    fs.mkdirSync(OLD, { recursive: true, mode: 0o700 }); fs.writeFileSync(path.join(OLD, 'gpg-agent.conf'), 'disable-scdaemon\n')
+    sh('gpg', ['--batch', '--pinentry-mode', 'loopback', '--gen-key'], { input: params, env: { ...process.env, GNUPGHOME: OLD }, stdio: ['pipe', 'ignore', 'ignore'] })
+    const realAgent = sh('sh', ['-c', 'command -v gpg-agent']).trim()
+    const evil = path.join(W, 'evil-agent.sh')
+    fs.writeFileSync(evil, `#!/bin/sh\ntouch ${MARKER}\nexec ${realAgent} "$@"\n`, { mode: 0o755 })
+    fs.appendFileSync(path.join(OLD, 'gpg.conf'), `agent-program ${evil}\n`)
+    // gen-key above already launched a default agent for OLD; kill it so the next sign relaunches via the PLANTED
+    // agent-program (the realistic repro: a patched Desktop's first sign, no agent running yet).
+    try { sh('gpgconf', ['--homedir', OLD, '--kill', 'all'], { stdio: ['ignore', 'ignore', 'ignore'] }) } catch {}
+    try { await hostSigner.detachSign('payload-bytes', OLD) } catch {}
+    record('BLOCKER control · a planted agent-program in the OLD keyring DOES run on a sign over it (the risk is real)', fs.existsSync(MARKER))
+    try { fs.rmSync(MARKER, { force: true }) } catch {}
+    const sigNew = await hostSigner.detachSign('payload-bytes', HOST)
+    record('POINT 1 (blocker, CHANGED) · the signer\'s keyring is NEW and clean — nothing planted in the OLD dir runs', !fs.existsSync(MARKER) && sigNew !== null && HOST !== OLD)
 
     // ── 2. the lab container, wired by the REAL sign-wiring — NO keyring/pcscd mount ───────────────────
     const overlay = (APP_RUNTIME_SRC && fs.existsSync(APP_RUNTIME_SRC)) ? ['-v', `${APP_RUNTIME_SRC}:/app/vendor/milpa/app-runtime/src:ro`] : []
@@ -147,6 +212,18 @@ app.whenReady().then(async () => {
     const r2 = await dockerProbe(FPR)
     record('POINT 3 · a second request is approved and signed afresh — a fresh nonce, never "allow always"', r2.signed === true && r2.issuedAt !== r1.issuedAt)
 
+    // ── POINT 5 (freshness dead zone, 0611 review): the house's OperationAuthorizer freshness is 120s; the Desktop
+    // window deadline is shorter, with margin, and counts down — so a slow yes refuses cleanly, not signed-then-expired.
+    process.env.MILPA_SIGN_AUTODECIDE = 'approve'
+    const fr = await new Promise((resolve) => execFile('docker', ['exec', NAME, 'php', '/labtest/freshness-probe.php'], { encoding: 'utf8', maxBuffer: 1 << 20 }, (e, o) => { try { resolve(JSON.parse((o || '').trim().split('\n').filter(Boolean).pop() || '{}')) } catch { resolve({ raw: (o || String(e)).slice(-200) }) } }))
+    record('POINT 5 · the house accepts the signature at 90s but REJECTS it at 121s (the 120s dead zone is real)', fr.granted_at_90s === true && fr.granted_at_121s === false && /expired/i.test(fr.reason_121 || ''), JSON.stringify(fr).slice(0, 200))
+    record('POINT 5 · the Desktop window deadline is shorter than the house freshness (90s < 120s, with margin)', require(path.join(ROOT, 'host-approve.js')).APPROVAL_WINDOW_MS < 120000, String(require(path.join(ROOT, 'host-approve.js')).APPROVAL_WINDOW_MS))
+    // with a short window and nobody approving, the sign refuses on the window's OWN deadline (never a hung dead zone)
+    process.env.MILPA_SIGN_WINDOW_MS = '1500'; delete process.env.MILPA_SIGN_AUTODECIDE
+    const t0 = Date.now(); const rt = await dockerProbe(FPR); const elapsed = Date.now() - t0
+    delete process.env.MILPA_SIGN_WINDOW_MS
+    record('POINT 5 · an un-answered approval refuses on the window deadline (well under the 120s freshness)', rt.signed === false && elapsed < 60000, `${JSON.stringify(rt)} elapsed=${elapsed}ms`)
+
     // ── POINT 4 (a NO is a refusal with its reason) ───────────────────────────────────────────────────
     process.env.MILPA_SIGN_AUTODECIDE = 'deny'
     const rd = await dockerProbe(FPR)
@@ -165,6 +242,8 @@ app.whenReady().then(async () => {
   } finally {
     try { if (server) server.close() } catch {}
     try { sh('docker', ['rm', '-f', NAME], { stdio: ['ignore', 'ignore', 'ignore'] }) } catch {}
+    // stop any gpg-agents the lab keyrings (incl. the planted-agent control) launched, before removing their dirs
+    for (const d of [path.join(W, 'host'), path.join(W, 'seat'), path.join(W, 'old')]) { try { sh('gpgconf', ['--homedir', d, '--kill', 'all'], { stdio: ['ignore', 'ignore', 'ignore'] }) } catch {} }
     try { fs.rmSync(W, { recursive: true, force: true }) } catch {}
   }
 

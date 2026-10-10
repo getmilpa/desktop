@@ -13,4 +13,18 @@
   set('canonical', a.canonical || '')
   document.getElementById('approve').addEventListener('click', function () { window.approval.approve() })
   document.getElementById('deny').addEventListener('click', function () { window.approval.deny() })
+
+  // The deadline the main enforces, shown and counted down — the house's freshness window is 120s, so this is shorter:
+  // a person who runs out of time gets a clean refusal here, never a signature the house then rejects as expired.
+  var deadline = (window.approval.deadline && window.approval.deadline()) || 0
+  if (deadline > 0) {
+    var el = document.getElementById('countdown')
+    var tick = function () {
+      var left = Math.max(0, Math.round((deadline - Date.now()) / 1000))
+      if (el) el.textContent = 'expires in ' + left + 's'
+      if (left <= 0) { window.approval.deny(); return }
+      setTimeout(tick, 250)
+    }
+    tick()
+  }
 })()

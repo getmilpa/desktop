@@ -27,8 +27,15 @@ const fs = require('node:fs')
 // (host-signer.js + host-approve.js), and the container only VERIFIES, holding public keys. The old mounts — the host
 // GNUPGHOME at /root/.gnupg and the pcscd socket — are GONE (GHSA-fjwx-8j4j-cqfq); the house signs through a unix
 // socket the main binds in (sign-wiring.js). A seat's key lives in its OWN host keyring, apart from the person's.
-const HOST_GNUPG = process.env.MILPA_GNUPGHOME || path.join(os.homedir(), '.milpa', 'gnupg')
-const HOST_GNUPG_SEAT = process.env.MILPA_GNUPGHOME_SEAT || path.join(os.homedir(), '.milpa', 'gnupg-seats')
+//
+// THE SIGNER'S KEYRING IS NEW — one no container ever saw. The OLD `~/.milpa/gnupg` was mounted read-write into the
+// container by affected versions (and the old keygen wrote its gpg.conf there), so its gpg.conf / gpg-agent.conf could
+// carry an attacker's `agent-program` / `pinentry-program` / `scdaemon-program`. Running `gpg` over that dir — even to
+// EXPORT — would execute the planted program on the HOST at the first sign. So the patched Desktop never opens it. The
+// old key is treated as COMPROMISED: the person generates a new key in this fresh keyring and re-enrolls. The env is a
+// NEW name too, so an existing `MILPA_GNUPGHOME` pointing at the mounted dir can never select the signer's keyring.
+const HOST_GNUPG = process.env.MILPA_HOST_GNUPGHOME || path.join(os.homedir(), '.milpa', 'host-gnupg')
+const HOST_GNUPG_SEAT = process.env.MILPA_HOST_GNUPGHOME_SEAT || path.join(os.homedir(), '.milpa', 'host-gnupg-seats')
 // PLATFORM. On Linux, `--network host` lets the container reach the local model and serves the board on
 // the host directly. On macOS (and Windows), Docker runs in a VM where `--network host` binds the VM,
 // NOT the host — so we publish the port instead, and a model on the Mac is reached via host.docker.internal.
@@ -146,7 +153,12 @@ async function startBackend () {
   for (let i = 0; i < 40 && !answered; i++) { try { const r = await fetch(`${BASE}/`); answered = r.status < 500 } catch {} if (!answered) await new Promise(r => setTimeout(r, 800)) }
   if (!answered) throw new Error(`the house did not answer on ${BASE} — docker logs ${NAME}`)
   // 0611: leave the container with PUBLIC keys only — export whatever the host holds, import it in, confirm 0 secrets.
-  try { const prov = signWiring.provisionPublicKeyring({ container: NAME, hostGnupg: HOST_GNUPG }); if (prov.secret > 0) console.warn(`[host-signer] WARNING: container holds ${prov.secret} secret key(s) — expected 0 (0611)`) } catch {}
+  // -1 means the check could not run (not "0 secrets") — say that too.
+  try {
+    const prov = signWiring.provisionPublicKeyring({ container: NAME, hostGnupg: HOST_GNUPG })
+    if (prov.secret > 0) console.warn(`[host-signer] WARNING: container holds ${prov.secret} secret key(s) — expected 0 (0611)`)
+    else if (prov.secret < 0) console.warn('[host-signer] WARNING: could not verify the container holds no secret keys (0611)')
+  } catch {}
   HUB = await probeHub()
   TRIAL = probeTrial()
 }
@@ -156,7 +168,11 @@ async function startHostSigner (socketDir) {
   try { fs.mkdirSync(HOST_GNUPG, { recursive: true, mode: 0o700 }) } catch {}
   try { fs.mkdirSync(HOST_GNUPG_SEAT, { recursive: true, mode: 0o700 }) } catch {}  // the seat's key, its own keyring
   const socketPath = signWiring.hostSocketPath(socketDir)
-  const approve = makeApprover({ app, BrowserWindow, ipcMain, root: __dirname, parent: win })
+  // The approval window deadline is shorter than the house's freshness window (OperationAuthorizer = 120s), with
+  // margin, so a slow approval refuses CLEANLY rather than signing into a dead zone that the house rejects as expired
+  // AFTER the person said yes (0611 review). The decision is also persisted — console.log alone is unread in a packaged app.
+  const logFile = path.join(app.getPath('userData'), 'host-signer.log')
+  const approve = makeApprover({ app, BrowserWindow, ipcMain, root: __dirname, parent: win, logFile })
   try { if (signServer) signServer.close() } catch {}
   signServer = hostSigner.serve({ socketPath, gnupgHome: HOST_GNUPG, approve })
   await new Promise((resolve) => { try { signServer.once('listening', resolve); signServer.once('error', resolve) } catch { resolve() } })
