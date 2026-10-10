@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('milpa', {
   boot: async () => ({
     ...state, origin: ORIGIN, panelUrl: `${ORIGIN}/webauthn/signin?next=%2Fmilpa%2Fadmin`,
     container: state.phase === 'starting' ? null : 'milpa-desktop-backend', image: 'ghcr.io/getmilpa/framework:dev-frankenphp', server: 'frankenphp',
-    commands: { run, panel: `${run} capabilities:enable milpa/admin --sign` },
+    commands: { run, panel: `${run} capabilities:enable milpa/admin --sign`, workspace: `${run} capabilities:enable milpa/agent-workspace --sign` },
   }),
   openInWindow: async (url) => { opened.push(url); return { ok: true } },
   openInBrowser: async (url) => { browsed.push(url); return { ok: true } },
