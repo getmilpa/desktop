@@ -1,12 +1,11 @@
 # greenhouse decisions/0611 (b) — the Desktop host signer, measured under xvfb (evidence/1183 Desktop side)
-# instrument: test/smoke-sign.js + sign-probe.php + freshness-probe.php  ·  electron v38.1.2  ·  Linux, lab keys (ed25519, disable-scdaemon)
+# instruments: test/smoke-sign.js + sign-probe.php + freshness-probe.php + migration-probe.php  ·  electron v38.1.2  ·  Linux, lab keys (ed25519, disable-scdaemon)
 # the person's private key is on the host only, in a NEW keyring no container saw; the container holds the public key only; --network none.
-# the token travels in argv (the preload reads --token= and its own-button approval round-trips it); /proc visibility is best-effort.
+# test seams are makeApprover OPTIONS the smoke passes (production reads no such env); test/verify.sh guards the source. The token travels in argv (the preload reads --token= and its own-button approval round-trips it); /proc visibility is best-effort.
 #
 PASS · the person's private key is on the HOST (1 secret), the seat keyring is a SEPARATE host keyring
 PASS · the approval opens in a window the MAIN owns, separate from any page
 PASS · POINT 1 · the window shows exactly the canonical the host will sign (operation + bytes)
-# token in /proc argv (best-effort): false
 PASS · POINT 2 · the one-time token is a fresh 32-hex value carried to the window in its argv
 PASS · POINT 5 · the approval window shows the time it has left (countdown)
 PASS · POINT 2 · another renderer cannot answer even with the REAL token (the sender gate refuses it)
@@ -27,7 +26,9 @@ PASS · POINT 3 · the HOST stamped the time and a nonce (not the house's clock)
 PASS · POINT 3 · a second request is approved and signed afresh — a fresh nonce, never "allow always"
 PASS · POINT 5 · the house accepts the signature at 90s but REJECTS it at 121s (the 120s dead zone is real)
 PASS · POINT 5 · the Desktop window deadline is shorter than the house freshness (90s < 120s, with margin)
-PASS · POINT 5 · an un-answered approval refuses on the window deadline (well under the 120s freshness)
+PASS · POINT 5 · an un-answered approval refuses on the window deadline (~1.5s here, well under 120s freshness)
 PASS · POINT 4 · a refused approval comes back to the house as "not signed", with its reason
 PASS · POINT 6 · with no host answering, the house gets no signature, with its reason
-25/25 host-signer checks passed
+PASS · MIGRATION · a key NOT in the out-of-band root is REFUSED — B cannot enroll while A is gone and B unrooted
+PASS · MIGRATION · the recovery WITHOUT A is an out-of-band config/identity.php edit (no A signature); then B enrolls
+27/27 host-signer checks passed

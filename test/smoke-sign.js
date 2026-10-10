@@ -30,6 +30,22 @@ app.commandLine.appendSwitch('no-sandbox'); app.commandLine.appendSwitch('disabl
 // would drop the window count to 0 and Electron would auto-quit mid-measure. The smoke owns its own exit (app.exit).
 app.on('window-all-closed', () => {})
 
+// The smoke drives the approval UI headlessly WITHOUT any production seam: when the host signer opens an approval
+// window for a SOCKET request, this watcher clicks its button per `autoMode`, and captures one screenshot if asked.
+// Windows the smoke drives by hand (the direct point-1/2 test, the mutation) run with autoMode=null, untouched here.
+let autoMode = null // 'approve' | 'deny' | null
+let shotTaken = false
+const SHOT = process.env.MILPA_SIGN_SHOT || ''
+app.on('browser-window-created', (_e, w) => {
+  w.webContents.once('did-finish-load', async () => {
+    try {
+      if (w.isDestroyed() || w.getTitle() !== 'Approve a signature') return
+      if (SHOT && !shotTaken) { shotTaken = true; try { fs.writeFileSync(SHOT, (await w.webContents.capturePage()).toPNG()) } catch {} }
+      if (autoMode === 'approve' || autoMode === 'deny') await w.webContents.executeJavaScript(`document.querySelector('#${autoMode}').click()`)
+    } catch {}
+  })
+})
+
 const IMG = process.env.MILPA_LAB_IMAGE || 'ghcr.io/getmilpa/framework:dev'
 // Optional: overlay a local app-runtime src into the container. Needed only UNTIL the framework image ships
 // app-runtime #789 (RemoteOperationSigner); after that a stock image carries it and no overlay is required.
@@ -85,6 +101,10 @@ app.whenReady().then(async () => {
     sh('gpg', ['--batch', '--pinentry-mode', 'loopback', '--gen-key'], { input: params, env: { ...process.env, GNUPGHOME: HOST }, stdio: ['pipe', 'ignore', 'ignore'] })
     const hostSec = sh('gpg', ['--list-secret-keys', '--with-colons'], { env: { ...process.env, GNUPGHOME: HOST } })
     FPR = (hostSec.split('\n').find((l) => l.startsWith('fpr')) || '').split(':')[9] || ''
+    // a second lab key — the NEW key B the person would generate after A is treated as compromised (migration probe)
+    const KEYB = path.join(W, 'keyb'); fs.mkdirSync(KEYB, { recursive: true, mode: 0o700 }); fs.writeFileSync(path.join(KEYB, 'gpg-agent.conf'), 'disable-scdaemon\n')
+    sh('gpg', ['--batch', '--pinentry-mode', 'loopback', '--gen-key'], { input: params, env: { ...process.env, GNUPGHOME: KEYB }, stdio: ['pipe', 'ignore', 'ignore'] })
+    const FPR_B = (sh('gpg', ['--list-secret-keys', '--with-colons'], { env: { ...process.env, GNUPGHOME: KEYB } }).split('\n').find((l) => l.startsWith('fpr')) || '').split(':')[9] || ''
     const hostSecretCount = hostSec.split('\n').filter((l) => l.startsWith('sec')).length
     const seatSecretCount = (() => { try { return sh('gpg', ['--list-secret-keys', '--with-colons'], { env: { ...process.env, GNUPGHOME: SEAT } }).split('\n').filter((l) => l.startsWith('sec')).length } catch { return 0 } })()
     record('the person\'s private key is on the HOST (1 secret), the seat keyring is a SEPARATE host keyring', hostSecretCount === 1 && FPR !== '' && SEAT !== HOST && seatSecretCount === 0, `host=${hostSecretCount} seat=${seatSecretCount}`)
@@ -95,7 +115,7 @@ app.whenReady().then(async () => {
     // be handed the REAL token and the test turns on the SENDER gate, not the token check.
     let capturedToken = ''
     const approve = makeApprover({ app, BrowserWindow, ipcMain, root: ROOT, parent: null, onShown: (_a, t) => { capturedToken = t } })
-    delete process.env.MILPA_SIGN_AUTODECIDE // the next approval is driven by hand, to inspect the window
+    autoMode = null // the next approval is driven by hand, to inspect the window
     server = hostSigner.serve({ socketPath, gnupgHome: HOST, approve })
     await new Promise((r) => server.once('listening', r))
 
@@ -137,21 +157,23 @@ app.whenReady().then(async () => {
     const approvedDirect = await Promise.race([pending, sleep(5000).then(() => 'timeout')])
     record('POINT 2 · only the approval window\'s own button approves it — its preload read the token from argv and sent it back', approvedDirect === true, String(approvedDirect))
 
-    // POINT 2 · MUTATION control: remove ONLY the sender gate (a test seam) and the same forged message with the REAL
-    // token MUST now succeed — proving the gate, not the token check, is what refuses the attacker above.
-    process.env.MILPA_SIGN_TEST_ALLOW_ANY_SENDER = '1'
+    // POINT 2 · MUTATION control: a second approver built with `allowAnySender: true` — a makeApprover OPTION the smoke
+    // passes and the Desktop's main NEVER does — removes ONLY the sender gate. The same forged message with the REAL
+    // token MUST now succeed, proving the gate, not the token check, is what refuses the attacker above.
+    let mutToken = ''
+    const approveMutable = makeApprover({ app, BrowserWindow, ipcMain, root: ROOT, parent: null, allowAnySender: true, onShown: (_a, t) => { mutToken = t } })
     const authzM = { ...authz, nonce: 'feedfeedfeedfeedfeedfeedfeedfeed' }
     authzM.canonical = hostSigner.canonical(authzM.operation, authzM.arguments, authzM.host, authzM.issuedAt, authzM.nonce)
-    const pendingM = approve(authzM)
+    autoMode = null // the attacker answers this one, not the watcher
+    const pendingM = approveMutable(authzM)
     let awM = null
     for (let i = 0; i < 50 && !awM; i++) { awM = approvalWindow(); if (!awM) await sleep(100) }
     const atk2 = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'sign-attacker-preload.js'), contextIsolation: true, sandbox: false } })
     await atk2.loadURL('about:blank')
-    await atk2.webContents.executeJavaScript(`window.attack.decide(${JSON.stringify(capturedToken)}, true)`).catch(() => {})
+    await atk2.webContents.executeJavaScript(`window.attack.decide(${JSON.stringify(mutToken)}, true)`).catch(() => {})
     const mutated = await Promise.race([pendingM, sleep(4000).then(() => 'timeout')])
     record('POINT 2 · MUTATION: without the sender gate the forged (real-token) message SUCCEEDS — the gate is load-bearing', mutated === true, String(mutated))
     try { atk2.close() } catch {}
-    delete process.env.MILPA_SIGN_TEST_ALLOW_ANY_SENDER
     // safety: never leave an approval window open (it would block the approver chain for the container signs below)
     { const lingering = approvalWindow(); if (lingering) { try { lingering.destroy() } catch {} await sleep(150) } }
 
@@ -204,7 +226,7 @@ app.whenReady().then(async () => {
     record('POINT 5 · the container holds PUBLIC keys only (0 secret keys)', prov.secret === 0 && prov.provisioned, `secret=${prov.secret} provisioned=${prov.provisioned}`)
 
     // ── POINT 1 + 3 + 6 (HAPPY): the REAL house asks over the socket, the host signs on approval, the house verifies ─
-    process.env.MILPA_SIGN_AUTODECIDE = 'approve'
+    autoMode = 'approve'
     const r1 = await dockerProbe(FPR)
     record('HAPPY · the house got a signature and verified it with its PUBLIC-only keyring', r1.signed === true && r1.verified === true && r1.fpr_matches === true && r1.container_secret_keys === 0, JSON.stringify(r1).slice(0, 220))
     record('POINT 1 · what was signed is the operation that was asked (end to end)', r1.operation === 'capabilities:enable' && r1.arguments && r1.arguments.capability === 'milpa/admin')
@@ -214,29 +236,39 @@ app.whenReady().then(async () => {
 
     // ── POINT 5 (freshness dead zone, 0611 review): the house's OperationAuthorizer freshness is 120s; the Desktop
     // window deadline is shorter, with margin, and counts down — so a slow yes refuses cleanly, not signed-then-expired.
-    process.env.MILPA_SIGN_AUTODECIDE = 'approve'
+    autoMode = 'approve'
     const fr = await new Promise((resolve) => execFile('docker', ['exec', NAME, 'php', '/labtest/freshness-probe.php'], { encoding: 'utf8', maxBuffer: 1 << 20 }, (e, o) => { try { resolve(JSON.parse((o || '').trim().split('\n').filter(Boolean).pop() || '{}')) } catch { resolve({ raw: (o || String(e)).slice(-200) }) } }))
     record('POINT 5 · the house accepts the signature at 90s but REJECTS it at 121s (the 120s dead zone is real)', fr.granted_at_90s === true && fr.granted_at_121s === false && /expired/i.test(fr.reason_121 || ''), JSON.stringify(fr).slice(0, 200))
     record('POINT 5 · the Desktop window deadline is shorter than the house freshness (90s < 120s, with margin)', require(path.join(ROOT, 'host-approve.js')).APPROVAL_WINDOW_MS < 120000, String(require(path.join(ROOT, 'host-approve.js')).APPROVAL_WINDOW_MS))
-    // with a short window and nobody approving, the sign refuses on the window's OWN deadline (never a hung dead zone)
-    process.env.MILPA_SIGN_WINDOW_MS = '1500'; delete process.env.MILPA_SIGN_AUTODECIDE
-    const t0 = Date.now(); const rt = await dockerProbe(FPR); const elapsed = Date.now() - t0
-    delete process.env.MILPA_SIGN_WINDOW_MS
-    record('POINT 5 · an un-answered approval refuses on the window deadline (well under the 120s freshness)', rt.signed === false && elapsed < 60000, `${JSON.stringify(rt)} elapsed=${elapsed}ms`)
+    // with a short window and nobody approving, the approval refuses on the window's OWN deadline (never a hung dead
+    // zone). Measured directly with an approver built with a short timeoutMs — a makeApprover OPTION, no env, no socket.
+    autoMode = null
+    const approveShort = makeApprover({ app, BrowserWindow, ipcMain, root: ROOT, parent: null, timeoutMs: 1500 })
+    const shortAuthz = { ...authz, nonce: 'aaaabbbbccccddddaaaabbbbccccdddd' }
+    shortAuthz.canonical = hostSigner.canonical(shortAuthz.operation, shortAuthz.arguments, shortAuthz.host, shortAuthz.issuedAt, shortAuthz.nonce)
+    const t0 = Date.now(); const shortRes = await approveShort(shortAuthz); const elapsed = Date.now() - t0
+    record('POINT 5 · an un-answered approval refuses on the window deadline (~1.5s here, well under 120s freshness)', shortRes === false && elapsed >= 1000 && elapsed < 10000, `res=${shortRes} elapsed=${elapsed}ms`)
 
     // ── POINT 4 (a NO is a refusal with its reason) ───────────────────────────────────────────────────
-    process.env.MILPA_SIGN_AUTODECIDE = 'deny'
+    autoMode = 'deny'
     const rd = await dockerProbe(FPR)
     record('POINT 4 · a refused approval comes back to the house as "not signed", with its reason', rd.signed === false && /did not approve/i.test(rd.reason || ''), JSON.stringify(rd))
 
     // ── POINT 6 (no host, no signature) ───────────────────────────────────────────────────────────────
-    process.env.MILPA_SIGN_AUTODECIDE = 'approve'
+    autoMode = 'approve'
     try { server.close() } catch {}
     try { fs.rmSync(socketPath, { force: true }) } catch {}
     server = null
     await sleep(300)
     const rn = await dockerProbe(FPR)
     record('POINT 6 · with no host answering, the house gets no signature, with its reason', rn.signed === false && /did not answer on its socket/i.test(rn.reason || ''), JSON.stringify(rn))
+
+    // ── MIGRATION (0611 review item 3): can the NEW key B take over after A is treated as compromised, WITHOUT A? ──
+    // Measured against the real identity classes in the container (migration-probe.php). The container is still up.
+    const migRaw = dockerExec(['php', '/labtest/migration-probe.php', '/tmp/labhouse', FPR, FPR_B])
+    let mig = {}; try { mig = JSON.parse(migRaw.trim().split('\n').filter(Boolean).pop() || '{}') } catch {}
+    record('MIGRATION · a key NOT in the out-of-band root is REFUSED — B cannot enroll while A is gone and B unrooted', mig.enroll_B_without_rooting === 'refused' && /not in the out-of-band root/i.test(mig.what_the_house_says || ''), (mig.what_the_house_says || migRaw).slice(0, 160))
+    record('MIGRATION · the recovery WITHOUT A is an out-of-band config/identity.php edit (no A signature); then B enrolls', mig.B_is_rooted_after_config_edit === true && /succeeded/i.test(mig.enroll_B_after_rooting || ''), JSON.stringify(mig).slice(0, 170))
   } catch (e) {
     record('harness ran without throwing', false, String(e && e.stack || e))
   } finally {

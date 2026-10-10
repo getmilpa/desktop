@@ -5,7 +5,9 @@
 // the main window) can draw over it, enumerate it, or answer for it: the decision comes back only from THAT window's
 // own button, over a channel gated to THAT window's webContents and this request's one-time token.
 //
-// `approve` is what the signer injects; a measurement injects its own (the host signer stays testable without a UI).
+// This module reads NO environment variable: a security patch must not carry a switch that weakens approval. Behaviour
+// is set only through makeApprover's options, and the Desktop's main passes none of the test-only ones (host-signer.log
+// is the only thing it configures). A measurement passes its own options and drives the window itself.
 
 'use strict'
 
@@ -20,24 +22,24 @@ const APPROVAL_WINDOW_MS = 90000
 
 // Build the approver. `BrowserWindow`, `ipcMain`, `app` from electron; `root` is the app dir (__dirname of main);
 // `parent` is the main window (the approval is modal to it); `timeoutMs` turns a person who never answers into a
-// refusal (point 4); `logFile` persists each decision. Returns `approve(authorization) => Promise<boolean>`.
-// `onShown(authorization, token)` is called in the MAIN when a window opens — for audit/telemetry of what was asked
-// (logFile records the decision), and for a test to correlate the one-time token the main generated.
-function makeApprover ({ app, BrowserWindow, ipcMain, root, parent = null, timeoutMs = APPROVAL_WINDOW_MS, logFile = null, onShown = null }) {
+// refusal (point 4); `logFile` persists each decision; `onShown(authorization, token)` is called in the MAIN when a
+// window opens (audit of what was asked, and a test's correlation of the one-time token the main generated).
+//
+// `allowAnySender` is TEST-ONLY and MUST stay false in production (the Desktop's main never passes it): a measurement
+// sets it to prove, by mutation, that the sender gate — not the token — is what refuses a forged decision. Returns
+// `approve(authorization) => Promise<boolean>`.
+function makeApprover ({ app, BrowserWindow, ipcMain, root, parent = null, timeoutMs = APPROVAL_WINDOW_MS, logFile = null, onShown = null, allowAnySender = false }) {
   // One at a time: the host signer serializes a connection's request, but two contained houses could ask at once; a
   // chain keeps each person-facing window about one operation, never a stack the person rushes through.
   let chain = Promise.resolve()
   return (authorization) => {
-    // A test seam may shorten the window to measure its deadline without waiting; never set in production. Read per
-    // call so a measurement can vary it between approvals.
-    const windowMs = Number(process.env.MILPA_SIGN_WINDOW_MS) > 0 ? Number(process.env.MILPA_SIGN_WINDOW_MS) : timeoutMs
-    const run = () => showOne({ BrowserWindow, ipcMain, root, parent, timeoutMs: windowMs, logFile, onShown, authorization })
+    const run = () => showOne({ BrowserWindow, ipcMain, root, parent, timeoutMs, logFile, onShown, allowAnySender, authorization })
     chain = chain.then(run, run)
     return chain
   }
 }
 
-function showOne ({ BrowserWindow, ipcMain, root, parent, timeoutMs, logFile, onShown, authorization }) {
+function showOne ({ BrowserWindow, ipcMain, root, parent, timeoutMs, logFile, onShown, allowAnySender, authorization }) {
   return new Promise((resolve) => {
     const token = crypto.randomBytes(16).toString('hex')
     const deadline = Date.now() + timeoutMs
@@ -46,7 +48,7 @@ function showOne ({ BrowserWindow, ipcMain, root, parent, timeoutMs, logFile, on
     const onDecision = (e, msg) => {
       // Only THIS window may answer — not the house page, not any other renderer. The sender gate is first and
       // non-negotiable; the token (one-time, carried in this window's argv) is the second lock, not the only one.
-      if (!win || (e.sender !== win.webContents && process.env.MILPA_SIGN_TEST_ALLOW_ANY_SENDER !== '1')) return
+      if (!win || (e.sender !== win.webContents && !allowAnySender)) return
       if (!msg || msg.token !== token) return
       finish(msg.ok === true)
     }
@@ -82,18 +84,6 @@ function showOne ({ BrowserWindow, ipcMain, root, parent, timeoutMs, logFile, on
     win.on('closed', () => finish(false)) // closing the window IS a refusal (point 4)
     win.loadFile(path.join(root, 'renderer', 'sign-approval.html'))
     if (onShown) { try { onShown(authorization, token) } catch {} }
-
-    // TEST SEAM — measurement only, never set in production. It drives the REAL window's own button (so the ceremony
-    // is exercised end to end under xvfb without a human finger) and can save a screenshot of what was shown.
-    const auto = process.env.MILPA_SIGN_AUTODECIDE // 'approve' | 'deny'
-    if (auto === 'approve' || auto === 'deny') {
-      win.webContents.once('did-finish-load', async () => {
-        try {
-          if (process.env.MILPA_SIGN_SHOT) { try { require('node:fs').writeFileSync(process.env.MILPA_SIGN_SHOT, (await win.webContents.capturePage()).toPNG()) } catch {} }
-          await win.webContents.executeJavaScript(`document.querySelector('#${auto}').click()`)
-        } catch { finish(false) }
-      })
-    }
   })
 }
 

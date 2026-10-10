@@ -7,6 +7,29 @@
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ELECTRON="$(node -p 'require("electron")')"
 status=0
+
+# ── GUARDS (greenhouse decisions/0611 review) ───────────────────────────────────────────────────────────────────
+# A security patch must not ship a switch that weakens approval, nor fall back to the OLD keyring that was mounted into
+# the container. These check the SOURCE, not behaviour. Each carries a mutation self-test (a known-bad line MUST be
+# caught) and treats a scan error as a failure, never a silent pass. Production files: main.js + the signer modules,
+# preloads and renderer. A match (the bad pattern is present) FAILS; clean passes; a grep error FAILS.
+SEAM_RE='process\.env\.(MILPA_SIGN_AUTODECIDE|MILPA_SIGN_TEST_ALLOW_ANY_SENDER|MILPA_SIGN_WINDOW_MS|MILPA_SIGN_SHOT)'
+OLDKEY_RE="\\bMILPA_GNUPGHOME\\b|'\\.milpa',[[:space:]]*'gnupg'|\\.milpa/gnupg"
+guard () { # $1=label $2=forbidden-pattern $3..=files
+  _label="$1"; _pat="$2"; shift 2
+  _out="$(grep -nHE "$_pat" "$@" 2>&1)"; _rc=$?
+  if   [ "$_rc" -eq 1 ]; then echo "OK · $_label"
+  elif [ "$_rc" -eq 0 ]; then echo "FAIL · $_label"; echo "$_out" | sed 's/^/    /'; status=1
+  else echo "FAIL · $_label — guard could not scan (grep rc=$_rc): $_out"; status=1; fi
+}
+# mutation self-tests: the patterns MUST catch a reintroduced seam / old-keyring reference, or the guards are broken
+printf 'x = process.env.MILPA_SIGN_AUTODECIDE\n' | grep -qE "$SEAM_RE"  || { echo "FAIL · seam guard pattern is broken (self-test)"; status=1; }
+printf 'x = process.env.MILPA_GNUPGHOME\n'       | grep -qE "$OLDKEY_RE" || { echo "FAIL · old-keyring guard pattern is broken (self-test)"; status=1; }
+guard "no production file reads the approval test seams (0611: pass them as makeApprover options, which only the smoke does)" \
+  "$SEAM_RE" "$DIR/main.js" "$DIR/host-approve.js" "$DIR/host-signer.js" "$DIR/sign-wiring.js" "$DIR/preload.js" "$DIR/sign-approval-preload.js" "$DIR/renderer/sign-approval.js"
+guard "no production file references the OLD mounted keyring (0611: the signer uses the NEW ~/.milpa/host-gnupg)" \
+  "$OLDKEY_RE" "$DIR/main.js" "$DIR/host-approve.js" "$DIR/host-signer.js" "$DIR/sign-wiring.js" "$DIR/preload.js" "$DIR/sign-approval-preload.js" "$DIR/renderer/sign-approval.js"
+
 # Which image a launch runs when nobody names one — plain node, a fake docker (greenhouse evidence/1095, G1).
 node "$DIR/test/choose-image.js" || status=1
 # Where the house's pages open — this window or the browser — and that every module main.js loads is packaged.

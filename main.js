@@ -28,12 +28,12 @@ const fs = require('node:fs')
 // GNUPGHOME at /root/.gnupg and the pcscd socket — are GONE (GHSA-fjwx-8j4j-cqfq); the house signs through a unix
 // socket the main binds in (sign-wiring.js). A seat's key lives in its OWN host keyring, apart from the person's.
 //
-// THE SIGNER'S KEYRING IS NEW — one no container ever saw. The OLD `~/.milpa/gnupg` was mounted read-write into the
-// container by affected versions (and the old keygen wrote its gpg.conf there), so its gpg.conf / gpg-agent.conf could
-// carry an attacker's `agent-program` / `pinentry-program` / `scdaemon-program`. Running `gpg` over that dir — even to
-// EXPORT — would execute the planted program on the HOST at the first sign. So the patched Desktop never opens it. The
-// old key is treated as COMPROMISED: the person generates a new key in this fresh keyring and re-enrolls. The env is a
-// NEW name too, so an existing `MILPA_GNUPGHOME` pointing at the mounted dir can never select the signer's keyring.
+// THE SIGNER'S KEYRING IS NEW — one no container ever saw. The keyring affected versions mounted read-write into the
+// container (and the old keygen wrote its config there) could carry an attacker's `agent-program` / `pinentry-program`
+// / `scdaemon-program` in its gpg config; running `gpg` over that dir — even to EXPORT — would execute the planted
+// program on the HOST at the first sign. So the patched Desktop never opens that dir. The old key is treated as
+// COMPROMISED: the person generates a new key in this fresh keyring and re-enrolls. The override env is a NEW name too,
+// so a pre-existing override that pointed at the mounted dir can never select the signer's keyring.
 const HOST_GNUPG = process.env.MILPA_HOST_GNUPGHOME || path.join(os.homedir(), '.milpa', 'host-gnupg')
 const HOST_GNUPG_SEAT = process.env.MILPA_HOST_GNUPGHOME_SEAT || path.join(os.homedir(), '.milpa', 'host-gnupg-seats')
 // PLATFORM. On Linux, `--network host` lets the container reach the local model and serves the board on
