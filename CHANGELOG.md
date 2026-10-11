@@ -5,6 +5,17 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-10
+
+### Security
+- The house signs through the host, and holds no signing key (greenhouse decisions/0611; GHSA-fjwx-8j4j-cqfq). The container no longer mounts the person's signing keyring (`~/.milpa/gnupg`) or `/run/pcscd`: those let any code the house ran sign as the person. The Electron main is now the signer — it holds the key in a **new** keyring no container ever saw (`~/.milpa/host-gnupg`; the old mounted one is treated as compromised and the person re-enrolls), shows each operation in a window the house page cannot reach, and signs only on the person's approval. The container holds **public keys only** and verifies. The approval window deadline is shorter than the house's freshness window, with a countdown, so a slow approval refuses cleanly; a refusal, a timeout, or no host each come back to the house with their reason, logged. Measured under xvfb with lab keys. (#17)
+
+### Added
+- The boot screen guides enabling the **workspace** (`capabilities:enable milpa/agent-workspace --sign`). The one-time link that enabling the panel (`milpa/admin`) prints does not carry `agent:run`, so a person who enrolls with it cannot drive the agent (the panel's composer refuses with `MILPA_SCOPE_DENIED`); the link that enabling the workspace prints does. The boot screen now also guides the workspace and says its link is the one to paste. The Desktop only guides the signed command — it does not widen any grant's scope (greenhouse decisions/0614 F5; t-0092). (#18)
+
+### Fixed
+- Pack the host-signer modules `main.js` loads — `host-signer.js`, `sign-wiring.js`, `host-approve.js`, and the approval window's preload `sign-approval-preload.js` — into `build.files`. #17 added the `require`s but not the build entries, so the packaged app would have failed to load. Caught by `test/open-where.js`.
+
 ## [0.5.3] - 2026-10-04
 
 ### Added
