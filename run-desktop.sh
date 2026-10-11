@@ -11,8 +11,9 @@
 #                          same app served by FrankenPHP, with the hub the UI subscribes to) and falls back to
 #                          ghcr.io/getmilpa/framework:dev (php -S, the UI polls) when the variant cannot be had.
 #                          Both public, no auth.
-#   MILPA_AGENT_BASE_URL   the model endpoint (default: http://llama.local:11438) — set to your own LAN IP
-#                          if `.local` mDNS does not resolve inside the container (common on macOS Docker).
+#   MILPA_AGENT_BASE_URL   the model endpoint (default: http://model.example:11438, a placeholder no model
+#                          answers) — set it to your own model's address. A `.local` mDNS name may not resolve
+#                          inside the container (common on macOS Docker): use the LAN IP there.
 #   MILPA_AGENT_MODEL      the model name (default: qwen3.8-27b)
 #   MILPA_AGENT_CONTEXT_TOKENS  the model's context window, only when you must declare one (default: unset — the
 #                          house measures the model's own window; greenhouse evidence/1091, E2)

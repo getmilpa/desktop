@@ -77,7 +77,7 @@ const BASE = `http://127.0.0.1:${HOST_PORT}`
 // is the port the Desktop chose — so its passkey window was refused (evidence/1068). The Desktop is the process that
 // serves the house here and the only one that knows this address; it declares it to the house, never the request.
 const PASSKEY_ORIGIN = `http://localhost:${HOST_PORT}`
-const MODEL = { base: process.env.MILPA_AGENT_BASE_URL || 'http://llama.local:11438', name: process.env.MILPA_AGENT_MODEL || 'qwen3.8-27b' }
+const MODEL = { base: process.env.MILPA_AGENT_BASE_URL || 'http://model.example:11438', name: process.env.MILPA_AGENT_MODEL || 'qwen3.8-27b' }
 // THE MODEL'S WINDOW IS THE HOUSE'S TO MEASURE (greenhouse evidence/1091, E2). The Desktop used to declare 24576 —
 // a qwen-32k minus its tool share — on every `docker run` and every drive, and the house obeys a declared window over
 // the one it measures: with the model at 49,152 the first two legs died in `context_budget_exhausted`. Now the Desktop
