@@ -1,6 +1,6 @@
 {
     "name": "milpa-desktop-shell",
-    "version": "0.5.3",
+    "version": "0.6.0",
     "description": "A minimal Electron shell that orchestrates a Milpa app in Docker and renders the agent board + a live preview of the UI the agent declares.",
     "main": "main.js",
     "scripts": {
@@ -28,6 +28,10 @@
             "preload-key.js",
             "security-key/**/*",
             "window-chrome.js",
+            "host-signer.js",
+            "sign-wiring.js",
+            "host-approve.js",
+            "sign-approval-preload.js",
             "renderer/**/*",
             "package.json"
         ],
