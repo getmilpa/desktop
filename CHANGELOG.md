@@ -5,6 +5,11 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-10
+
+### Fixed
+- The default model endpoint is a placeholder, not a lab machine's name (greenhouse evidence/1144). The agent defaulted to a lab machine's address — the house's own local model, not the person's. The default is now `http://model.example:11438`, a placeholder no model answers, so a fresh install points nowhere until the person sets `MILPA_AGENT_BASE_URL` (and `MILPA_AGENT_MODEL`) to their own model's address. A `.local` mDNS name may not resolve inside the container (common on macOS Docker): use the LAN IP there. (#19)
+
 ## [0.6.0] - 2026-10-10
 
 ### Security
