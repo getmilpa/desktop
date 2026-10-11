@@ -26,7 +26,7 @@ First launch pulls `ghcr.io/getmilpa/framework:dev` (public, no auth). Then: **C
 
 ### Pointing the agent at a model
 
-The agent defaults to `http://llama.local:11438` (the house's local model — not yours). Set your own before
+The agent defaults to `http://model.example:11438`, a placeholder that no model answers. Set your own before
 launching:
 
 ```bash

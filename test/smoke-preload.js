@@ -50,7 +50,7 @@ const tableWrap = (n) => [
   stateScript(n)
 ].join('')
 contextBridge.exposeInMainWorld('milpa', {
-  status: async () => ({ model: { name: 'qwen3.8-27b', base: 'http://llama.local:11438' }, version: 'smoke', backend: (++statusCalls > 2), base: 'http://127.0.0.1:8899' }),
+  status: async () => ({ model: { name: 'qwen3.8-27b', base: 'http://model.example:11438' }, version: 'smoke', backend: (++statusCalls > 2), base: 'http://127.0.0.1:8899' }),
   show: async () => (mode === 'verified' ? { ...show, closure: verifiedClosure } : mode === 'unverified' ? { ...show, closure: unverifiedClosure } : { ...show, question }), owner: async () => ({ ok: true, verified: true, owner: 'key:' + FP, scopes: ['agent:read'] }),
   events: async (_s, since) => {
     if (!hubScenario) return (mode === 'parked' ? events : doneEvents)
