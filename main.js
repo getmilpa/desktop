@@ -592,7 +592,15 @@ handle('milpa:boot', async () => {
   const run = `${TERMINAL} php bin/coa`
   return {
     ...BOOT, origin: PASSKEY_ORIGIN, panelUrl: SIGNIN_URL, keyPin: KEY_PIN, container: BOOT.phase === 'starting' ? null : NAME, image: IMAGE, server: SERVER,
-    commands: { run, panel: `${run} capabilities:enable milpa/admin --sign` },
+    // The panel enables the admin UI; the WORKSPACE enables driving the agent. The one-time link that enabling the
+    // workspace prints carries `agent:run`, so a person who enrolls with it can write to a session — without it the
+    // panel's composer refuses with MILPA_SCOPE_DENIED (t-0092; the composer's own message is the house's, tracked
+    // apart). The Desktop only GUIDES the signed command; it does not widen any grant's scope (decisions/0614 F5).
+    commands: {
+      run,
+      panel: `${run} capabilities:enable milpa/admin --sign`,
+      workspace: `${run} capabilities:enable milpa/agent-workspace --sign`,
+    },
   }
 })
 // Open a link of THIS house in the window — the one-time link the panel's enablement printed, or the panel itself.

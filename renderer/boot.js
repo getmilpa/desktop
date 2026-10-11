@@ -21,6 +21,8 @@
     $('#boot-paste').hidden = st.phase !== 'up'
     paintFound()
     $('#cmd-panel').textContent = st.commands.panel
+    // Driving the agent needs agent:run; enabling the workspace prints the one-time link that carries it (t-0092).
+    if ($('#cmd-workspace')) $('#cmd-workspace').textContent = st.commands.workspace || ''
     $('#boot-link').setAttribute('placeholder', tr('boot.paste.placeholder', { origin: st.origin }))
     // WHICH DOOR COMES FIRST (greenhouse decisions/0568). Where the Desktop can ask for a security key's PIN itself
     // (`keyPin`: Linux), the window is the first offer and the browser the other; where it cannot, the browser stays

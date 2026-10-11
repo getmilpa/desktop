@@ -39,7 +39,7 @@ node "$DIR/test/open-where.js" || status=1
 # A security key that asks for a PIN: the PIN's math against Yubico's, the wire, the ceremony — against a key that
 # is a process, never a real one (greenhouse decisions/0568).
 node "$DIR/test/security-key.js" || status=1
-for SMOKE in "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-window.js" "$DIR/test/smoke-key.js"; do
+for SMOKE in "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-boot-workspace.js" "$DIR/test/smoke-window.js" "$DIR/test/smoke-key.js"; do
   if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ]; then
     xvfb-run -a --server-args='-screen 0 1320x840x24' "$ELECTRON" --no-sandbox "$SMOKE" || status=1
   else
@@ -69,5 +69,14 @@ if command -v docker >/dev/null 2>&1 && docker image inspect "$SIGN_IMG" >/dev/n
   xvfb-run -a --server-args='-screen 0 1320x840x24' node "$DIR/test/persist-measure.mjs" "$ELECTRON" "$SIGN_IMG" "${MILPA_PERSIST_PORT:-8921}" || status=1
 else
   echo "SKIP · Desktop persistence measure (greenhouse decisions/0611) — needs Docker, the image, Linux and xvfb"
+fi
+
+# The PREMISE the boot screen's workspace step teaches (t-0092): enabling milpa/agent-workspace brings agent:run while
+# the panel alone does not. `capabilities:enable` runs `composer require`, so it NEEDS Docker, the image AND NETWORK;
+# skipped otherwise. Lab key, rooted out of band; never Rod's keyring, pcscd, or card.
+if command -v docker >/dev/null 2>&1 && docker image inspect "$SIGN_IMG" >/dev/null 2>&1 && curl -sf -m 8 https://repo.packagist.org/packages.json >/dev/null 2>&1; then
+  sh "$DIR/test/scope-premise.sh" "$SIGN_IMG" || status=1
+else
+  echo "SKIP · workspace-scope premise (t-0092) — needs Docker, the image, and network (composer require)"
 fi
 exit $status

@@ -1,0 +1,8 @@
+# t-0092 — the premise the boot screen's workspace step teaches, measured by execution (test/scope-premise.sh)
+# published image ghcr.io/getmilpa/framework:dev (app-runtime v0.220.0, id sha256:12b520968916…); lab key, rooted out of band.
+#
+scope after found:                      [identity:enroll]
+scope after enable milpa/admin:         [milpa.admin capabilities:enable identity:enroll]
+scope after enable milpa/agent-workspace:[milpa.admin capabilities:enable agent:read agent:answer agent:run config:write provider:declare identity:enroll]
+OK · the panel (milpa/admin) link does NOT carry agent:run
+OK · enabling the workspace (milpa/agent-workspace) adds agent:run — the boot-screen instruction is sound

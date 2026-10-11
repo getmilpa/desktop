@@ -58,6 +58,10 @@
         </div>
         <code id="cmd-found" data-ready="false"></code></li>
       <li><span data-i18n="boot.step.panel">Enable its panel (signed) — it prints a one-time link:</span><code id="cmd-panel"></code></li>
+      <!-- Driving the agent needs agent:run. Enabling the WORKSPACE prints the one-time link that carries it; without
+           it the panel's composer refuses (MILPA_SCOPE_DENIED agent:run). The Desktop only guides the signed command —
+           it never widens a grant's scope (greenhouse decisions/0614 F5; t-0092). -->
+      <li><span data-i18n="boot.step.workspace">To drive the agent from the panel, also enable the workspace (signed). The one-time link THIS prints is the one that lets you write to a session (it carries agent:run) — paste that one below:</span><code id="cmd-workspace"></code></li>
     </ol>
   </section>
   <section id="boot-ready" hidden>
