@@ -70,4 +70,13 @@ if command -v docker >/dev/null 2>&1 && docker image inspect "$SIGN_IMG" >/dev/n
 else
   echo "SKIP · Desktop persistence measure (greenhouse decisions/0611) — needs Docker, the image, Linux and xvfb"
 fi
+
+# The PREMISE the boot screen's workspace step teaches (t-0092): enabling milpa/agent-workspace brings agent:run while
+# the panel alone does not. `capabilities:enable` runs `composer require`, so it NEEDS Docker, the image AND NETWORK;
+# skipped otherwise. Lab key, rooted out of band; never Rod's keyring, pcscd, or card.
+if command -v docker >/dev/null 2>&1 && docker image inspect "$SIGN_IMG" >/dev/null 2>&1 && curl -sf -m 8 https://repo.packagist.org/packages.json >/dev/null 2>&1; then
+  sh "$DIR/test/scope-premise.sh" "$SIGN_IMG" || status=1
+else
+  echo "SKIP · workspace-scope premise (t-0092) — needs Docker, the image, and network (composer require)"
+fi
 exit $status

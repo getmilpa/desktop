@@ -3,6 +3,11 @@
 // composer (MILPA_SCOPE_DENIED agent:run; the composer's own message is the house's, tracked apart). This fails on
 // main (there is no workspace step) and passes with the fix. The Desktop only guides a SIGNED command; it does not
 // widen any grant's scope (decisions/0614 F5).
+//
+// This checks the TEXT is shown. The PREMISE it teaches — enabling milpa/agent-workspace brings agent:run while the
+// panel alone does not — is measured BY EXECUTION in test/scope-premise.sh (recorded in test/scope-premise-measured.txt):
+// against the published image, after the panel the first-human scope is `milpa.admin capabilities:enable identity:enroll`
+// (no agent:run); after the workspace it is `… agent:read agent:answer agent:run config:write provider:declare identity:enroll`.
 'use strict'
 const { app, BrowserWindow } = require('electron')
 const path = require('path')
