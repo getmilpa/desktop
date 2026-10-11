@@ -7,6 +7,31 @@
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ELECTRON="$(node -p 'require("electron")')"
 status=0
+
+# ── GUARDS (greenhouse decisions/0611 review) ───────────────────────────────────────────────────────────────────
+# A security patch must not ship a switch that weakens approval, nor fall back to the OLD keyring that was mounted into
+# the container. These check the SOURCE, not behaviour. Each carries a mutation self-test (a known-bad line MUST be
+# caught) and treats a scan error as a failure, never a silent pass. Production files: main.js + the signer modules,
+# preloads and renderer. A match (the bad pattern is present) FAILS; clean passes; a grep error FAILS.
+# The BARE seam names — they may appear only under test/, never in production (stricter than just `process.env.NAME`;
+# MILPA_SIGN_SOCKET is a real production env and is deliberately NOT in this set).
+SEAM_RE='MILPA_SIGN_(AUTODECIDE|TEST_ALLOW_ANY_SENDER|WINDOW_MS|SHOT)'
+OLDKEY_RE="\\bMILPA_GNUPGHOME\\b|'\\.milpa',[[:space:]]*'gnupg'|\\.milpa/gnupg"
+guard () { # $1=label $2=forbidden-pattern $3..=files
+  _label="$1"; _pat="$2"; shift 2
+  _out="$(grep -nHE "$_pat" "$@" 2>&1)"; _rc=$?
+  if   [ "$_rc" -eq 1 ]; then echo "OK · $_label"
+  elif [ "$_rc" -eq 0 ]; then echo "FAIL · $_label"; echo "$_out" | sed 's/^/    /'; status=1
+  else echo "FAIL · $_label — guard could not scan (grep rc=$_rc): $_out"; status=1; fi
+}
+# mutation self-tests: the patterns MUST catch a reintroduced seam / old-keyring reference, or the guards are broken
+printf 'x = process.env.MILPA_SIGN_AUTODECIDE\n' | grep -qE "$SEAM_RE"  || { echo "FAIL · seam guard pattern is broken (self-test)"; status=1; }
+printf 'x = process.env.MILPA_GNUPGHOME\n'       | grep -qE "$OLDKEY_RE" || { echo "FAIL · old-keyring guard pattern is broken (self-test)"; status=1; }
+guard "no production file names an approval test seam (0611: the seam names live only under test/; production takes makeApprover options)" \
+  "$SEAM_RE" "$DIR/main.js" "$DIR/host-approve.js" "$DIR/host-signer.js" "$DIR/sign-wiring.js" "$DIR/preload.js" "$DIR/sign-approval-preload.js" "$DIR/renderer/sign-approval.js"
+guard "no production file references the OLD mounted keyring (0611: the signer uses the NEW ~/.milpa/host-gnupg)" \
+  "$OLDKEY_RE" "$DIR/main.js" "$DIR/host-approve.js" "$DIR/host-signer.js" "$DIR/sign-wiring.js" "$DIR/preload.js" "$DIR/sign-approval-preload.js" "$DIR/renderer/sign-approval.js"
+
 # Which image a launch runs when nobody names one — plain node, a fake docker (greenhouse evidence/1095, G1).
 node "$DIR/test/choose-image.js" || status=1
 # Where the house's pages open — this window or the browser — and that every module main.js loads is packaged.
@@ -21,4 +46,28 @@ for SMOKE in "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-win
     "$ELECTRON" --no-sandbox "$SMOKE" || status=1
   fi
 done
+# The host signer (greenhouse decisions/0611): the person's key signs on the host, the container only verifies. Unlike
+# the other smokes (which fake docker), this one needs a REAL container, so it runs only where Docker and the framework
+# image are present — skipped cleanly otherwise. It uses lab keys (ed25519, disable-scdaemon) in throwaway keyrings and
+# a --network none container; it never touches a real keyring, pcscd, or card. MILPA_APP_RUNTIME_SRC overlays a local
+# app-runtime (needed only until the image ships #789's RemoteOperationSigner).
+SIGN_IMG="${MILPA_LAB_IMAGE:-ghcr.io/getmilpa/framework:dev}"
+if command -v docker >/dev/null 2>&1 && docker image inspect "$SIGN_IMG" >/dev/null 2>&1; then
+  if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ]; then
+    xvfb-run -a --server-args='-screen 0 1320x840x24' "$ELECTRON" --no-sandbox "$DIR/test/smoke-sign.js" || status=1
+  else
+    "$ELECTRON" --no-sandbox "$DIR/test/smoke-sign.js" || status=1
+  fi
+else
+  echo "SKIP · host signer measure (greenhouse decisions/0611) — needs Docker and the framework image ($SIGN_IMG)"
+fi
+
+# Does a Desktop house survive a restart? (0611 review — the migration story depends on it.) Drives the REAL Desktop
+# through a restart cycle, isolated in a throwaway HOME (never Rod's keyring/userData), lab image, lab name and port.
+# Linux + xvfb only (it boots the real app); skipped elsewhere.
+if command -v docker >/dev/null 2>&1 && docker image inspect "$SIGN_IMG" >/dev/null 2>&1 && [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ]; then
+  xvfb-run -a --server-args='-screen 0 1320x840x24' node "$DIR/test/persist-measure.mjs" "$ELECTRON" "$SIGN_IMG" "${MILPA_PERSIST_PORT:-8921}" || status=1
+else
+  echo "SKIP · Desktop persistence measure (greenhouse decisions/0611) — needs Docker, the image, Linux and xvfb"
+fi
 exit $status

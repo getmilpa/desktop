@@ -1,0 +1,15 @@
+# greenhouse decisions/0611 review — does a Desktop house survive a restart? (migration depends on it)
+# instrument: test/persist-measure.mjs — drives the REAL Desktop (electron main.js) under xvfb through a restart
+# cycle, isolated in a throwaway HOME (never Rod's keyring/userData), lab image pinned by id, lab name + port.
+# electron v38.1.2 · image ghcr.io/getmilpa/framework:dev (id sha256:f4cbd2f6c9f9…)
+#
+# (3) the image declares NO volume:                       volumes = null
+# (1) normal restart (no MILPA_KEEP_BACKEND):
+#       booted, wrote marker, quit -> container removed on quit (containerAfterQuit=false),
+#       relaunch -> marker ABSENT  => the house is NEW/unfounded (state does not survive)
+# (2) MILPA_KEEP_BACKEND=1:
+#       quit -> container lingers (containerAfterQuit=true),
+#       relaunch attaches -> marker present => the house SURVIVES (still founded)
+#
+PERSIST PASS {"volumes":"null","normal":{"keep":false,"bootedA":true,"bootedB":true,"markerBefore":"persisted","containerAfterQuit":false,"markerAfter":"ABSENT","persisted":false},"keep":{"keep":true,"bootedA":true,"bootedB":true,"markerAfter":"persisted","persisted":true}}
+OK · a normal Desktop restart gives a NEW house (no volume, rm -f); only MILPA_KEEP_BACKEND=1 keeps it

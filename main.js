@@ -22,12 +22,20 @@ const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
 
-// KEY CUSTODY (greenhouse decisions/0121). The backend is an ephemeral container, so signing keys must
-// live OUTSIDE it. Two paths, both wired: (a) a host GNUPGHOME mounted in as the default — software keys
-// created here PERSIST on the host; (b) best-effort YubiKey passthrough via the host pcscd socket, so a
-// smartcard's key is reachable without ever leaving the hardware. The container never holds a private key.
-const HOST_GNUPG = process.env.MILPA_GNUPGHOME || path.join(os.homedir(), '.milpa', 'gnupg')
-const PCSCD_SOCK = '/run/pcscd'  // host pcscd socket dir; mounted only when it exists (YubiKey present)
+// KEY CUSTODY (greenhouse decisions/0611, supersedes 0121). The person's signing key NEVER enters the container. The
+// Electron MAIN is the host signer: it holds the key, SHOWS each operation, signs only on the person's approval
+// (host-signer.js + host-approve.js), and the container only VERIFIES, holding public keys. The old mounts — the host
+// GNUPGHOME at /root/.gnupg and the pcscd socket — are GONE (GHSA-fjwx-8j4j-cqfq); the house signs through a unix
+// socket the main binds in (sign-wiring.js). A seat's key lives in its OWN host keyring, apart from the person's.
+//
+// THE SIGNER'S KEYRING IS NEW — one no container ever saw. The keyring affected versions mounted read-write into the
+// container (and the old keygen wrote its config there) could carry an attacker's `agent-program` / `pinentry-program`
+// / `scdaemon-program` in its gpg config; running `gpg` over that dir — even to EXPORT — would execute the planted
+// program on the HOST at the first sign. So the patched Desktop never opens that dir. The old key is treated as
+// COMPROMISED: the person generates a new key in this fresh keyring and re-enrolls. The override env is a NEW name too,
+// so a pre-existing override that pointed at the mounted dir can never select the signer's keyring.
+const HOST_GNUPG = process.env.MILPA_HOST_GNUPGHOME || path.join(os.homedir(), '.milpa', 'host-gnupg')
+const HOST_GNUPG_SEAT = process.env.MILPA_HOST_GNUPGHOME_SEAT || path.join(os.homedir(), '.milpa', 'host-gnupg-seats')
 // PLATFORM. On Linux, `--network host` lets the container reach the local model and serves the board on
 // the host directly. On macOS (and Windows), Docker runs in a VM where `--network host` binds the VM,
 // NOT the host — so we publish the port instead, and a model on the Mac is reached via host.docker.internal.
@@ -45,6 +53,11 @@ const IS_MAC = process.platform === 'darwin'
 // and skips the choice; which server it gets is read from the image, not from its name.
 const { chooseImage, IMAGE_PREFERRED } = require('./choose-image.js')
 const openWhere = require('./open-where.js')
+// 0611: the house signs through the host. These three are the host signer, the docker-run wiring that ties its socket
+// to the container (and drops the key mounts), and the approval window the main owns.
+const hostSigner = require('./host-signer.js')
+const signWiring = require('./sign-wiring.js')
+const { makeApprover } = require('./host-approve.js')
 let IMAGE = process.env.MILPA_IMAGE || IMAGE_PREFERRED
 let SERVER = 'php-s'   // or 'frankenphp' — read from the image in startBackend()
 let HUB = false        // whether the backend answers as a Mercure hub on its own port — probed, not assumed
@@ -89,6 +102,7 @@ const HOUSE_PAGE = { preload: path.join(__dirname, 'preload.js'), additionalArgu
 // What the window shows while it is not the panel yet — read by the boot screen through `milpa:boot`.
 const BOOT = { phase: 'starting', error: null, panel: false }
 let win = null
+let signServer = null   // the host signer (0611); bound before the container, closed on quit
 const VERSION = require('./package.json').version
 
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', ...opts }).trim()
@@ -106,6 +120,8 @@ async function startBackend () {
       if (up === NAME) {
         for (let i = 0; i < 10; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 500)) }
         try { SERVER = serverOf(sh('docker', ['inspect', '--format', '{{.Config.Image}}', NAME])) } catch {}
+        // The kept container still mounts the socket dir (stable under userData): rebind the signer so it can sign.
+        await startHostSigner(path.join(app.getPath('userData'), 'sign'))
         HUB = await probeHub()
         TRIAL = probeTrial()
         return
@@ -115,12 +131,12 @@ async function startBackend () {
   try { sh('docker', ['rm', '-f', NAME]) } catch {}
   IMAGE = chooseImage()
   SERVER = serverOf(IMAGE)
-  // --network host so the container can reach the local model (llama.local); the board is served on HOST_PORT.
-  try { fs.mkdirSync(HOST_GNUPG, { recursive: true, mode: 0o700 }) } catch {}
-  const mounts = ['-v', `${HOST_GNUPG}:/root/.gnupg`]
-  // YubiKey passthrough is best-effort: mount the host pcscd socket only when it is there, so a machine
-  // without a smartcard reader still launches. Real device access may need the host's udev rules too.
-  try { if (fs.existsSync(PCSCD_SOCK)) mounts.push('-v', `${PCSCD_SOCK}:/run/pcscd`) } catch {}
+  // 0611: bind the host signer on a socket and mount only THAT into the container — NO keyring, NO pcscd. The house
+  // signs through the host; the private key never enters it. The socket dir is under userData (stable across runs).
+  const signSocketDir = path.join(app.getPath('userData'), 'sign')
+  try { fs.mkdirSync(signSocketDir, { recursive: true, mode: 0o700 }) } catch {}
+  await startHostSigner(signSocketDir)
+  const mounts = signWiring.containerSignArgs(signSocketDir)
   // On Linux, host networking; on macOS, publish the port (host networking is a no-op in the VM there).
   const net = IS_MAC ? ['-p', `${HOST_PORT}:${HOST_PORT}`] : ['--network', 'host']
   // The model config goes on the CONTAINER (not just per docker-exec), so the agent web door
@@ -136,8 +152,30 @@ async function startBackend () {
   let answered = false
   for (let i = 0; i < 40 && !answered; i++) { try { const r = await fetch(`${BASE}/`); answered = r.status < 500 } catch {} if (!answered) await new Promise(r => setTimeout(r, 800)) }
   if (!answered) throw new Error(`the house did not answer on ${BASE} — docker logs ${NAME}`)
+  // 0611: leave the container with PUBLIC keys only — export whatever the host holds, import it in, confirm 0 secrets.
+  // -1 means the check could not run (not "0 secrets") — say that too.
+  try {
+    const prov = signWiring.provisionPublicKeyring({ container: NAME, hostGnupg: HOST_GNUPG })
+    if (prov.secret > 0) console.warn(`[host-signer] WARNING: container holds ${prov.secret} secret key(s) — expected 0 (0611)`)
+    else if (prov.secret < 0) console.warn('[host-signer] WARNING: could not verify the container holds no secret keys (0611)')
+  } catch {}
   HUB = await probeHub()
   TRIAL = probeTrial()
+}
+// Bind the host signer (0611): the Electron main holds the person's key, shows each operation in a window the house
+// cannot reach, and signs on approval. `socketDir` is mounted into the container as /run/milpa; the house asks here.
+async function startHostSigner (socketDir) {
+  try { fs.mkdirSync(HOST_GNUPG, { recursive: true, mode: 0o700 }) } catch {}
+  try { fs.mkdirSync(HOST_GNUPG_SEAT, { recursive: true, mode: 0o700 }) } catch {}  // the seat's key, its own keyring
+  const socketPath = signWiring.hostSocketPath(socketDir)
+  // The approval window deadline is shorter than the house's freshness window (OperationAuthorizer = 120s), with
+  // margin, so a slow approval refuses CLEANLY rather than signing into a dead zone that the house rejects as expired
+  // AFTER the person said yes (0611 review). The decision is also persisted — console.log alone is unread in a packaged app.
+  const logFile = path.join(app.getPath('userData'), 'host-signer.log')
+  const approve = makeApprover({ app, BrowserWindow, ipcMain, root: __dirname, parent: win, logFile })
+  try { if (signServer) signServer.close() } catch {}
+  signServer = hostSigner.serve({ socketPath, gnupgHome: HOST_GNUPG, approve })
+  await new Promise((resolve) => { try { signServer.once('listening', resolve); signServer.once('error', resolve) } catch { resolve() } })
 }
 // Whether the house serves its panel yet: a fresh house has none until `capabilities:enable milpa/admin` (404).
 async function panelServed () {
@@ -174,7 +212,11 @@ function trialSeccomp (image) {
 function probeTrial () {
   try { return sh('docker', ['exec', NAME, 'php', '-r', 'require "vendor/autoload.php"; echo (new Milpa\\AppRuntime\\Agent\\TrialRunner())->available() ? "yes" : "no";']) === 'yes' } catch { return false }
 }
-function stopBackend () { if (process.env.MILPA_KEEP_BACKEND === '1') return; try { sh('docker', ['rm', '-f', NAME]) } catch {} }
+function stopBackend () {
+  try { if (signServer) { signServer.close(); signServer = null } } catch {}
+  if (process.env.MILPA_KEEP_BACKEND === '1') return
+  try { sh('docker', ['rm', '-f', NAME]) } catch {}
+}
 
 // ── IPC: the narrow bridge the preload exposes ─────────────────────────────────────────────────
 // ONLY THE DESKTOP'S OWN PAGES MAY CALL IT. The window shows the house's panel — a page served over http that also
@@ -430,37 +472,50 @@ handle('milpa:subscribe', async (_e, { session: sid } = {}) => {
 })
 handle('milpa:unsubscribe', async () => { closeHub(); return { ok: true } })
 
-// ── identity / key custody (greenhouse decisions/0121) ──────────────────────────────────────────
-// gpg runs INSIDE the container, but over the mounted host GNUPGHOME — so keys live on the host, never
-// in the ephemeral backend. `keys` also reports whether a YubiKey/smartcard is reachable (card custody).
-handle('milpa:keys', async () => {
-  const { out } = await exec('docker', ['exec', NAME, 'gpg', '--list-secret-keys', '--with-colons'])
+// ── identity / key custody (greenhouse decisions/0611, supersedes 0121) ──────────────────────────────────────────
+// The person's key lives on the HOST and never enters the container (host-signer.js). So `keys` lists the HOST
+// keyring for custody, and `keygen` creates the key on the HOST, then gives the container only the PUBLIC key to
+// verify with. Signing itself (`signOp`, `enableCapability`) stays `docker exec … --sign`: inside the container the
+// `--sign` gate now routes through RemoteOperationSigner → the socket → here, where the person approves and the host
+// signs. NO `gpg --card-status` in the container — the card is a host concern now (and the mount that reached it is
+// gone); a card's touch, when there is one, reaches the person at the host signer's own gpg.
+const listKeys = (out) => {
   const keys = []; let fpr = null
   for (const l of (out || '').split('\n')) {
     if (l.startsWith('sec')) fpr = null
     else if (l.startsWith('fpr') && !fpr) { fpr = l.split(':')[9]; keys.push({ fingerprint: fpr, uid: '' }) }
     else if (l.startsWith('uid') && keys.length) keys[keys.length - 1].uid = l.split(':')[9]
   }
-  const card = await exec('docker', ['exec', NAME, 'gpg', '--card-status'])
-  const hasCard = !!card.out && /Reader|Application ID|Serial number/i.test(card.out) && !/no.*card|not available/i.test(card.out)
-  return { ok: true, keys, custody: hasCard ? 'yubikey' : (keys.length ? 'software' : 'none') }
+  return keys
+}
+handle('milpa:keys', async () => {
+  const { out } = await exec('gpg', ['--list-secret-keys', '--with-colons'], { env: { ...process.env, GNUPGHOME: HOST_GNUPG } })
+  const keys = listKeys(out)
+  return { ok: true, keys, custody: keys.length ? 'software' : 'none' }
 })
-// «Crear claves»: generate a software gpg key in the mounted GNUPGHOME (persists on the host), and make
-// it the default signing key so `--sign` finds it without a key id.
+// «Crear claves»: generate a software gpg key on the HOST keyring (0611) — the private key is born on the host and
+// never enters the container — make it the host's default signing key, and give the container the public key to verify.
 handle('milpa:keygen', async (_e, { name, email } = {}) => {
   const real = (name || 'Milpa Operator').replace(/[\r\n"]/g, '')
   const mail = (email || 'operator@milpa.local').replace(/[\r\n"]/g, '')
   const params = `%no-protection\nKey-Type: eddsa\nKey-Curve: ed25519\nKey-Usage: sign\nName-Real: ${real}\nName-Email: ${mail}\nExpire-Date: 0\n%commit\n`
-  const gen = await exec('docker', ['exec', '-i', NAME, 'gpg', '--batch', '--pinentry-mode', 'loopback', '--gen-key'], { input: params })
-  if (gen.err) return { ok: false, error: String(gen.err) }
-  const { out } = await exec('docker', ['exec', NAME, 'gpg', '--list-secret-keys', '--with-colons'])
+  try { fs.mkdirSync(HOST_GNUPG, { recursive: true, mode: 0o700 }) } catch {}
+  const env = { ...process.env, GNUPGHOME: HOST_GNUPG }
+  // gpg --gen-key reads the param block on stdin, which async execFile cannot feed; execFileSync can. ed25519 is fast.
+  try { execFileSync('gpg', ['--batch', '--pinentry-mode', 'loopback', '--gen-key'], { input: params, env, stdio: ['pipe', 'ignore', 'ignore'] }) } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+  let out = ''
+  try { out = execFileSync('gpg', ['--list-secret-keys', '--with-colons'], { env, encoding: 'utf8' }) } catch {}
   let fpr = null
   for (const l of (out || '').split('\n')) { if (l.startsWith('fpr')) { fpr = l.split(':')[9]; break } }
-  if (fpr) await exec('docker', ['exec', NAME, 'sh', '-c', `printf 'default-key %s\nbatch\npinentry-mode loopback\n' '${fpr.replace(/[^0-9A-Fa-f]/g, '')}' >> /root/.gnupg/gpg.conf`])
+  // Make it the host's default signing key. No `batch`/loopback forced globally — the host signer must be able to ask
+  // the person for a passphrase or a card touch (host-signer.js runs gpg without --batch).
+  if (fpr) { try { fs.appendFileSync(path.join(HOST_GNUPG, 'gpg.conf'), `default-key ${fpr}\n`) } catch {} }
+  // Give the container the PUBLIC key so it can verify this signer; the private key stays on the host.
+  try { signWiring.provisionPublicKeyring({ container: NAME, hostGnupg: HOST_GNUPG }) } catch {}
   return { ok: !!fpr, fingerprint: fpr }
 })
-// Run a signed identity operation (identity:bootstrap / identity:enroll / identity:revoke / session:own).
-// The signature happens in the container over the mounted keys; the renderer only names the op and args.
+// Run a signed identity operation (identity:bootstrap / identity:enroll / identity:revoke / session:own). The `--sign`
+// inside the container routes through the host signer (0611); the renderer only names the op and args.
 handle('milpa:signOp', async (_e, { op, args } = {}) => {
   const allow = ['identity:bootstrap', 'identity:enroll', 'identity:revoke', 'session:own']
   if (!allow.includes(op)) return { ok: false, error: `refused: ${op} is not a signable identity op` }
