@@ -188,6 +188,7 @@
       'boot.panelReady': 'The panel is enabled.',
       'boot.panel.open': 'Open the panel in your browser', 'boot.panel.here': 'Open it in this window',
       'boot.container': 'container {name} · image {image} · {server}',
+      'boot.imageUnknown': 'unknown', 'boot.serverUnknown': 'unknown server',
       // The PIN window (key.html): a passkey ceremony with a security key that asks for a PIN (greenhouse decisions/0568).
       'key.kicker': 'security key',
       'key.title.create': 'Register your security key', 'key.title.get': 'Sign in with your security key',
@@ -395,6 +396,7 @@
       'boot.panelReady': 'El panel está habilitado.',
       'boot.panel.open': 'Abrir el panel en tu navegador', 'boot.panel.here': 'Abrirlo en esta ventana',
       'boot.container': 'contenedor {name} · imagen {image} · {server}',
+      'boot.imageUnknown': 'desconocida', 'boot.serverUnknown': 'servidor desconocido',
       'key.kicker': 'llave de seguridad',
       'key.title.create': 'Registra tu llave de seguridad', 'key.title.get': 'Entra con tu llave de seguridad',
       'key.who.create': '{origin} pide registrar una llave de seguridad.', 'key.who.get': '{origin} te pide entrar con tu llave de seguridad.',

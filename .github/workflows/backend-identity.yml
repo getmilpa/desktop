@@ -1,0 +1,26 @@
+name: Backend identity
+
+# Apache-2.0 · (c) Rodrigo Vicente - TeamX Agency
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Observed backend identity and lifecycle
+        run: node --test test/backend-image.js
+      - name: Image selection and packaged modules
+        run: |
+          node test/choose-image.js
+          node test/open-where.js

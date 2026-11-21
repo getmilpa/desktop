@@ -1,0 +1,154 @@
+// Execute the real main-process lifecycle with isolated Electron/Docker boundaries.
+// No production test switch, real keyring, container mutation or model is used.
+// Apache-2.0 · (c) Rodrigo Vicente - TeamX Agency
+const assert = require('node:assert/strict')
+const { test } = require('node:test')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
+const ROOT = path.join(__dirname, '..')
+const SOURCES = process.env.MILPA_TEST_SOURCE_ROOT || ROOT
+const source = fs.readFileSync(process.env.MILPA_TEST_MAIN || path.join(SOURCES, 'main.js'), 'utf8')
+const CONTAINER = 'a'.repeat(64)
+const STARTED = 'b'.repeat(64)
+const OLD_ID = 'sha256:' + '1'.repeat(64)
+const NEW_ID = 'sha256:' + '2'.repeat(64)
+
+function house (options = {}) {
+  const calls = []; const handlers = new Map(); let choices = 0
+  const config = { keep: true, present: true, ref: 'example/kept:old', imageId: OLD_ID, ...options }
+  function docker (cmd, args) {
+    calls.push([cmd, ...args])
+    assert.equal(cmd, 'docker')
+    if (args[0] === 'ps') {
+      if (config.psError) throw new Error('Docker lookup failed')
+      return config.present ? (args.includes('{{.Names}}') ? 'milpa-desktop-backend' : CONTAINER) : ''
+    }
+    if (args[0] === 'inspect') {
+      if (config.inspectError) throw new Error('Container vanished')
+      if (args.includes('{{.Config.Image}}')) return config.ref
+      assert.ok([CONTAINER, STARTED].includes(args.at(-1)), 'Inspect must bind an exact container ID')
+      return config.raw === undefined ? JSON.stringify([config.ref, config.imageId]) : config.raw
+    }
+    if (args[0] === 'image' && args[1] === 'inspect') {
+      if (config.serverError) throw new Error('Image unavailable')
+      // The requested tag now points at a different image; the retained ID has not changed.
+      return JSON.stringify([args.at(-1) === OLD_ID ? 'milpa-dev' : 'milpa-frankenphp'])
+    }
+    if (args[0] === 'run' && args.includes('--rm')) return '{}'
+    if (args[0] === 'run' && args.includes('-d')) return STARTED
+    if (args[0] === 'rm') return ''
+    if (args[0] === 'exec') return 'no'
+    throw new Error('Unexpected Docker call: ' + args.join(' '))
+  }
+  const fakeFs = { mkdirSync () {}, writeFileSync () {} }
+  const context = vm.createContext({
+    console, URL, AbortSignal, __dirname: ROOT,
+    process: { env: { MILPA_IMAGE: 'example/requested:new', MILPA_KEEP_BACKEND: config.keep ? '1' : '0' }, platform: 'linux' },
+    fetch: async () => ({ status: 200, body: { cancel: async () => {} } }),
+    setTimeout: (fn) => { fn(); return 1 }, clearTimeout () {}, Buffer,
+    require (name) {
+      if (name === 'electron') return {
+        app: { getPath: () => '/isolated-test', whenReady: () => ({ then () {} }), on () {}, commandLine: { appendSwitch () {} } },
+        ipcMain: { handle: (n, fn) => handlers.set(n, fn) }
+      }
+      if (name === 'node:child_process') return { execFileSync: docker, execFile: () => { throw new Error('Unexpected asynchronous subprocess') } }
+      if (name === 'node:fs') return fakeFs
+      if (name === 'node:os') return { homedir: () => '/isolated-test' }
+      if (name === './choose-image.js') return { IMAGE_PREFERRED: 'example/preferred:new', chooseImage: () => { choices++; return 'example/requested:new' } }
+      if (name === './host-signer.js') return { serve: () => {
+        if (config.signerError) throw new Error('Signer unavailable')
+        return { once: (event, fn) => { if (event === 'listening') fn() }, close () {} }
+      } }
+      if (name === './host-approve.js') return { makeApprover: () => () => {} }
+      if (name === './sign-wiring.js') return { hostSocketPath: () => '/isolated-test/socket', containerSignArgs: () => [], provisionPublicKeyring: () => ({ secret: 0 }) }
+      if (name === './security-key/desk.js') return { attach () {} }
+      return require(name.startsWith('./') ? path.join(ROOT, name) : name)
+    }
+  })
+  vm.runInContext(source, context, { filename: 'main.js' })
+  const own = { senderFrame: { url: 'file:///desktop/renderer/boot.html' } }
+  return {
+    config, calls, choices: () => choices,
+    start: async () => { await vm.runInContext('startBackend()', context); vm.runInContext("BOOT.phase = 'up'", context) },
+    state: async () => ({ status: await handlers.get('milpa:status')(own), boot: await handlers.get('milpa:boot')(own) })
+  }
+}
+
+function kept (h) {
+  assert.equal(h.choices(), 0)
+  assert.equal(h.calls.filter(c => c[1] === 'rm' || c[1] === 'run').length, 0, 'Retained backend must not be recreated')
+}
+
+test('before launch, configured image is not presented as an observation', async () => {
+  const { status } = await house().state()
+  assert.equal(status.image, null)
+  assert.equal(status.imageId, null)
+})
+test('reuse reports exact container reference and immutable image ID through both IPC surfaces', async () => {
+  const h = house(); await h.start(); const { status, boot } = await h.state()
+  for (const s of [status, boot]) {
+    assert.equal(s.image, 'example/kept:old'); assert.equal(s.imageId, OLD_ID); assert.equal(s.server, 'php-s')
+  }
+  kept(h)
+})
+test('a retagged reference does not change the retained image ID or its server classification', async () => {
+  const h = house({ ref: 'example/requested:new' }); await h.start()
+  const { status } = await h.state()
+  assert.equal(status.image, 'example/requested:new'); assert.equal(status.imageId, OLD_ID); assert.equal(status.server, 'php-s'); kept(h)
+})
+for (const options of [{ inspectError: true }, { raw: 'broken' }, { raw: '{}' }, { raw: '["", "sha256:no"]' }, { imageId: null }]) {
+  test('unreadable or incomplete observation stays unknown: ' + JSON.stringify(options), async () => {
+    const h = house(options); await h.start()
+    for (const s of Object.values(await h.state())) {
+      assert.equal(s.image, null); assert.equal(s.imageId, null); assert.equal(s.server, 'unknown')
+    }
+    kept(h)
+  })
+}
+test('failure after a previous observation cannot retain its old identity', async () => {
+  const h = house(); await h.start(); h.config.inspectError = true; await h.start()
+  const { status } = await h.state(); assert.equal(status.image, null); assert.equal(status.imageId, null); kept(h)
+})
+for (const options of [{ psError: true }, { signerError: true }]) {
+  test('reuse preparation failure never falls through to removing the backend: ' + JSON.stringify(options), async () => {
+    const h = house(options); await assert.rejects(h.start()); kept(h)
+  })
+}
+test('failed image inspection preserves known identity but marks server unknown', async () => {
+  const h = house({ serverError: true }); await h.start(); const { status } = await h.state()
+  assert.equal(status.imageId, OLD_ID); assert.equal(status.server, 'unknown'); kept(h)
+})
+for (const keep of [false, true]) {
+  test('fresh start observes the created container, including when no retained backend exists: ' + keep, async () => {
+    const h = house({ keep, present: false, ref: 'example/actually-started:current', imageId: NEW_ID }); await h.start()
+    assert.equal(h.choices(), 1)
+    assert.equal(h.calls.filter(c => c[1] === 'run' && c.includes('-d')).length, 1)
+    const { status } = await h.state(); assert.equal(status.image, 'example/actually-started:current'); assert.equal(status.imageId, NEW_ID)
+    assert.equal(h.calls.find(c => c[1] === 'inspect').at(-1), STARTED)
+  })
+}
+
+// The actual renderer and translation catalog, with only DOM primitives replaced.
+for (const locale of ['en', 'es']) {
+  test('boot renderer shows observed identity and explicit unknown in ' + locale, async () => {
+    const elements = new Map(); const listeners = new Map(); let next
+    const element = (s) => {
+      if (!elements.has(s)) elements.set(s, { value: '', dataset: {}, textContent: '', title: '', classList: { toggle () {} }, setAttribute () {}, addEventListener () {} })
+      return elements.get(s)
+    }
+    const state = { phase: 'up', container: 'kept', image: 'observed:old', imageId: OLD_ID, server: 'php-s', commands: { run: '', panel: '' } }
+    const window = { milpa: { boot: async () => state }, addEventListener: (n, fn) => listeners.set(n, fn), dispatchEvent: (e) => listeners.get(e.type)?.() }
+    const context = vm.createContext({ window, document: { querySelector: element, querySelectorAll: () => [], documentElement: {}, addEventListener () {} }, navigator: { language: locale }, localStorage: { getItem: () => locale, setItem () {} }, CustomEvent: class { constructor (type) { this.type = type } }, setTimeout: (fn) => { next = fn }, URL })
+    vm.runInContext(fs.readFileSync(path.join(SOURCES, 'renderer/i18n.js'), 'utf8'), context)
+    vm.runInContext(fs.readFileSync(path.join(SOURCES, 'renderer/boot.js'), 'utf8'), context)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.match(element('#boot-container').textContent, /observed:old/)
+    assert.ok(element('#boot-container').textContent.includes(OLD_ID.slice(0, 19)))
+    assert.equal(element('#boot-container').title, OLD_ID)
+    Object.assign(state, { image: null, imageId: null, server: 'unknown' }); await next()
+    assert.match(element('#boot-container').textContent, locale === 'en' ? /unknown/ : /desconocida/)
+    assert.doesNotMatch(element('#boot-container').textContent, /observed:old|null|undefined/)
+    assert.equal(element('#boot-container').title, '')
+  })
+}

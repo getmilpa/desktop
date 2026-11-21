@@ -34,7 +34,9 @@
       $(browser).classList.toggle('mui-btn--primary', !here); $(browser).classList.toggle('mui-btn--secondary', here)
       $(win).classList.toggle('mui-btn--primary', here); $(win).classList.toggle('mui-btn--secondary', !here)
     }
-    $('#boot-container').textContent = st.container ? tr('boot.container', { name: st.container, image: st.image, server: st.server }) : ''
+    const image = (st.image || tr('boot.imageUnknown')) + (st.imageId ? ` (${st.imageId.slice(0, 19)})` : '')
+    $('#boot-container').textContent = st.container ? tr('boot.container', { name: st.container, image, server: st.server === 'unknown' ? tr('boot.serverUnknown') : st.server }) : ''
+    $('#boot-container').title = st.imageId || ''
   }
 
   // THE FOUNDING COMMAND, FROM WHAT THE PERSON TYPED (greenhouse decisions/0566). It used to be printed with «…» where
