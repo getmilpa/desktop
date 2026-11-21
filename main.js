@@ -118,7 +118,8 @@ async function startBackend () {
   // container. Measured need: a session mid-build died with the container on every relaunch.
   if (process.env.MILPA_KEEP_BACKEND === '1') {
     // A failed lookup is not evidence of absence: do not replace a backend we could not inspect.
-    const up = sh('docker', ['ps', '--no-trunc', '--filter', `name=^${NAME}$`, '--format', '{{.ID}}'])
+    const name = NAME.replace(/[^a-zA-Z0-9_-]/g, char => '\\' + char)
+    const up = sh('docker', ['ps', '--no-trunc', '--filter', `name=^/${name}$`, '--format', '{{.ID}}'])
     if (up) {
       if (!/^[a-f0-9]{64}$/.test(up)) throw new Error('Could not identify the retained backend')
       observeBackendImage(up)
@@ -197,8 +198,8 @@ function observeBackendImage (container) {
   SERVER = 'unknown'
   try {
     if (!/^[a-f0-9]{64}$/.test(container)) return
-    const data = JSON.parse(sh('docker', ['inspect', '--format', '[{{json .Config.Image}},{{json .Image}}]', container]))
-    if (!Array.isArray(data) || data.length !== 2 || typeof data[0] !== 'string' || !data[0].trim() || !/^sha256:[a-f0-9]{64}$/.test(data[1])) return
+    const data = JSON.parse(sh('docker', ['inspect', '--format', '[{{json .Config.Image}},{{json .Image}},{{json .Name}}]', container]))
+    if (!Array.isArray(data) || data.length !== 3 || data[2] !== '/' + NAME || typeof data[0] !== 'string' || !data[0].trim() || !/^sha256:[a-f0-9]{64}$/.test(data[1])) return
     IMAGE = data[0]
     IMAGE_ID = data[1]
     SERVER = serverOf(IMAGE_ID, 'unknown')
