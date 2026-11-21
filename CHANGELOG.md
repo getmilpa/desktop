@@ -5,6 +5,11 @@ All notable changes to Milpa Desktop are documented here. This project adheres t
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-21
+
+### Fixed
+- A retained backend reports its observed image reference and immutable image ID instead of the configured next-launch image. Failed inspection displays unknown; lookup or signer failures while retaining a backend no longer fall through to removing it. Fresh launches also report the created container's image. These startup observations do not assert installed Composer versions or track external container replacement.
+
 ## [0.6.1] - 2026-10-10
 
 ### Fixed

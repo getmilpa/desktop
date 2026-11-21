@@ -51,15 +51,17 @@ const IS_MAC = process.platform === 'darwin'
 // polling. When that tag cannot be had — not pulled yet and no network, or not published yet — the plain `:dev`
 // still runs, under `php -S` with several workers, and the renderer polls as before. MILPA_IMAGE names one image
 // and skips the choice; which server it gets is read from the image, not from its name.
-const { chooseImage, IMAGE_PREFERRED } = require('./choose-image.js')
+const { chooseImage } = require('./choose-image.js')
 const openWhere = require('./open-where.js')
 // 0611: the house signs through the host. These three are the host signer, the docker-run wiring that ties its socket
 // to the container (and drops the key mounts), and the approval window the main owns.
 const hostSigner = require('./host-signer.js')
 const signWiring = require('./sign-wiring.js')
 const { makeApprover } = require('./host-approve.js')
-let IMAGE = process.env.MILPA_IMAGE || IMAGE_PREFERRED
-let SERVER = 'php-s'   // or 'frankenphp' — read from the image in startBackend()
+// Observed backend identity. A configured tag is only a launch request, not a running image.
+let IMAGE = null
+let IMAGE_ID = null
+let SERVER = 'unknown'
 let HUB = false        // whether the backend answers as a Mercure hub on its own port — probed, not assumed
 let TRIAL = false      // whether the house can confine a seat's trial — asked of the house, not assumed
 // The container's name. A lab running beside another Desktop names its own; everyone else keeps the default.
@@ -115,22 +117,22 @@ async function startBackend () {
   // that lets the UI restart (to pick up a shell fix) WITHOUT killing the live sessions inside the
   // container. Measured need: a session mid-build died with the container on every relaunch.
   if (process.env.MILPA_KEEP_BACKEND === '1') {
-    try {
-      const up = sh('docker', ['ps', '--filter', `name=^${NAME}$`, '--format', '{{.Names}}'])
-      if (up === NAME) {
-        for (let i = 0; i < 10; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 500)) }
-        try { SERVER = serverOf(sh('docker', ['inspect', '--format', '{{.Config.Image}}', NAME])) } catch {}
-        // The kept container still mounts the socket dir (stable under userData): rebind the signer so it can sign.
-        await startHostSigner(path.join(app.getPath('userData'), 'sign'))
-        HUB = await probeHub()
-        TRIAL = probeTrial()
-        return
-      }
-    } catch {}
+    // A failed lookup is not evidence of absence: do not replace a backend we could not inspect.
+    const up = sh('docker', ['ps', '--no-trunc', '--filter', `name=^${NAME}$`, '--format', '{{.ID}}'])
+    if (up) {
+      if (!/^[a-f0-9]{64}$/.test(up)) throw new Error('Could not identify the retained backend')
+      observeBackendImage(up)
+      for (let i = 0; i < 10; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 500)) }
+      // The kept container still mounts the socket dir (stable under userData): rebind the signer so it can sign.
+      await startHostSigner(path.join(app.getPath('userData'), 'sign'))
+      HUB = await probeHub()
+      TRIAL = probeTrial()
+      return
+    }
   }
   try { sh('docker', ['rm', '-f', NAME]) } catch {}
-  IMAGE = chooseImage()
-  SERVER = serverOf(IMAGE)
+  const launchImage = chooseImage()
+  const launchServer = serverOf(launchImage)
   // 0611: bind the host signer on a socket and mount only THAT into the container — NO keyring, NO pcscd. The house
   // signs through the host; the private key never enters it. The socket dir is under userData (stable across runs).
   const signSocketDir = path.join(app.getPath('userData'), 'sign')
@@ -145,10 +147,11 @@ async function startBackend () {
   // FrankenPHP keeps the image's own entrypoint and command: they read PORT, and the entrypoint is what tells the
   // app its server is its hub. `php -S` replaces the command, and gets several workers so a long request (a
   // stream, a turn) does not hold the next one (decisions/0504) — set here too, for an image that predates the ENV.
-  const serve = SERVER === 'frankenphp'
-    ? [IMAGE]
-    : ['-e', 'PHP_CLI_SERVER_WORKERS=8', IMAGE, 'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php']
-  sh('docker', ['run', '-d', '--name', NAME, ...net, ...trialSeccomp(IMAGE), '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, '-e', `MILPA_CLI_PREFIX=${TERMINAL}`, ...modelEnv, ...mounts, ...serve])
+  const serve = launchServer === 'frankenphp'
+    ? [launchImage]
+    : ['-e', 'PHP_CLI_SERVER_WORKERS=8', launchImage, 'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php']
+  const started = sh('docker', ['run', '-d', '--name', NAME, ...net, ...trialSeccomp(launchImage), '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, '-e', `MILPA_CLI_PREFIX=${TERMINAL}`, ...modelEnv, ...mounts, ...serve])
+  observeBackendImage(started)
   let answered = false
   for (let i = 0; i < 40 && !answered; i++) { try { const r = await fetch(`${BASE}/`); answered = r.status < 500 } catch {} if (!answered) await new Promise(r => setTimeout(r, 800)) }
   if (!answered) throw new Error(`the house did not answer on ${BASE} — docker logs ${NAME}`)
@@ -183,8 +186,23 @@ async function panelServed () {
 }
 // Read from the image, not its tag: the FrankenPHP variant's entrypoint is `milpa-frankenphp` (greenhouse
 // docker/milpa-dev-frankenphp.Dockerfile). Anything else is served by `php -S`.
-function serverOf (image) {
-  try { return /milpa-frankenphp/.test(sh('docker', ['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', image])) ? 'frankenphp' : 'php-s' } catch { return 'php-s' }
+function serverOf (image, unknown = 'php-s') {
+  try { return /milpa-frankenphp/.test(sh('docker', ['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', image])) ? 'frankenphp' : 'php-s' } catch { return unknown }
+}
+// Bind a launch-time observation to an immutable container ID, not a name or mutable tag.
+// This describes its image, not Composer packages that may have been mounted or changed inside it.
+function observeBackendImage (container) {
+  IMAGE = null
+  IMAGE_ID = null
+  SERVER = 'unknown'
+  try {
+    if (!/^[a-f0-9]{64}$/.test(container)) return
+    const data = JSON.parse(sh('docker', ['inspect', '--format', '[{{json .Config.Image}},{{json .Image}}]', container]))
+    if (!Array.isArray(data) || data.length !== 2 || typeof data[0] !== 'string' || !data[0].trim() || !/^sha256:[a-f0-9]{64}$/.test(data[1])) return
+    IMAGE = data[0]
+    IMAGE_ID = data[1]
+    SERVER = serverOf(IMAGE_ID, 'unknown')
+  } catch { /* Unknown stays explicit; a retained backend is never replaced to repair its label. */ }
 }
 // A hub is known by what it answers (greenhouse decisions/0504): a topic-less subscription is refused with 400
 // (anonymous allowed) or 401 (JWT first). `php -S` answers 404 — no hub, so the renderer polls.
@@ -578,7 +596,7 @@ handle('milpa:enableCapability', async (_e, capability) => {
   const { err, out } = await exec('docker', ['exec', NAME, 'php', 'bin/coa', 'capabilities:enable', `--capability=${cap}`, '--sign', '--json'])
   try { const d = JSON.parse(out.trim().split('\n').filter(Boolean).pop()); return d.result || d } catch { return { ok: !err, raw: (out || String(err)).slice(-2000) } }
 })
-handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: BOOT.phase === 'up', base: BASE, image: IMAGE, server: SERVER, hub: HUB, trial: TRIAL }))
+handle('milpa:status', async () => ({ model: MODEL, version: VERSION, backend: BOOT.phase === 'up', base: BASE, image: IMAGE, imageId: IMAGE_ID, server: SERVER, hub: HUB, trial: TRIAL }))
 
 // ── the window: the boot screen, then the house's panel (greenhouse evidence/1091, E3) ─────────────────────────────
 // What the boot screen reads: where the house is, whether it serves its panel yet, and the commands that give it one
@@ -591,7 +609,7 @@ handle('milpa:boot', async () => {
   if (BOOT.phase === 'up' && !BOOT.panel) BOOT.panel = await panelServed()
   const run = `${TERMINAL} php bin/coa`
   return {
-    ...BOOT, origin: PASSKEY_ORIGIN, panelUrl: SIGNIN_URL, keyPin: KEY_PIN, container: BOOT.phase === 'starting' ? null : NAME, image: IMAGE, server: SERVER,
+    ...BOOT, origin: PASSKEY_ORIGIN, panelUrl: SIGNIN_URL, keyPin: KEY_PIN, container: BOOT.phase === 'starting' ? null : NAME, image: IMAGE, imageId: IMAGE_ID, server: SERVER,
     // The panel enables the admin UI; the WORKSPACE enables driving the agent. The one-time link that enabling the
     // workspace prints carries `agent:run`, so a person who enrolls with it can write to a session — without it the
     // panel's composer refuses with MILPA_SCOPE_DENIED (t-0092; the composer's own message is the house's, tracked

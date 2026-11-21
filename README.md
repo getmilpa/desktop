@@ -47,6 +47,14 @@ FrankenPHP, with a Mercure hub on the app's own port — and subscribes to it, s
 reasoning stream in as they happen. When that image cannot be had it falls back to `ghcr.io/getmilpa/framework:dev`,
 served by `php -S` with several workers, and the UI polls the session instead.
 
+With `MILPA_KEEP_BACKEND=1`, an already-running backend is retained. The boot screen
+reports the image reference and image ID observed from that container at attachment;
+the full ID is available on hover. A tag may have moved since the container started,
+so its immutable image ID remains distinct from the configured launch image.
+Failed inspection is shown as unknown and does not recreate a retained backend.
+These are startup observations, not continuous monitoring of external container
+replacement or proof of Composer packages mounted or updated inside the container.
+
 ## Architecture
 
 - **main.js** — the trusted process. Starts and stops the backend container, shows the boot screen
