@@ -16,19 +16,23 @@ const NEW_ID = 'sha256:' + '2'.repeat(64)
 
 function house (options = {}) {
   const calls = []; const handlers = new Map(); let choices = 0
-  const config = { keep: true, present: true, ref: 'example/kept:old', imageId: OLD_ID, ...options }
+  const config = { keep: true, present: true, name: 'milpa-desktop-backend', ref: 'example/kept:old', imageId: OLD_ID, ...options }
   function docker (cmd, args) {
     calls.push([cmd, ...args])
     assert.equal(cmd, 'docker')
     if (args[0] === 'ps') {
       if (config.psError) throw new Error('Docker lookup failed')
-      return config.present ? (args.includes('{{.Names}}') ? 'milpa-desktop-backend' : CONTAINER) : ''
+      const pattern = args[args.indexOf('--filter') + 1].slice(5)
+      const rows = config.containers || [{ id: CONTAINER, name: config.name }]
+      return config.present ? rows.filter(row => new RegExp(pattern).test('/' + row.name) || new RegExp(pattern).test(row.name)).map(row => args.includes('{{.Names}}') ? row.name : row.id).join('\n') : ''
     }
     if (args[0] === 'inspect') {
       if (config.inspectError) throw new Error('Container vanished')
       if (args.includes('{{.Config.Image}}')) return config.ref
       assert.ok([CONTAINER, STARTED].includes(args.at(-1)), 'Inspect must bind an exact container ID')
-      return config.raw === undefined ? JSON.stringify([config.ref, config.imageId]) : config.raw
+      const data = [config.ref, config.imageId]
+      if (args.some(arg => arg.includes('{{json .Name}}'))) data.push('/' + (config.observedName || config.name))
+      return config.raw === undefined ? JSON.stringify(data) : config.raw
     }
     if (args[0] === 'image' && args[1] === 'inspect') {
       if (config.serverError) throw new Error('Image unavailable')
@@ -44,7 +48,7 @@ function house (options = {}) {
   const fakeFs = { mkdirSync () {}, writeFileSync () {} }
   const context = vm.createContext({
     console, URL, AbortSignal, __dirname: ROOT,
-    process: { env: { MILPA_IMAGE: 'example/requested:new', MILPA_KEEP_BACKEND: config.keep ? '1' : '0' }, platform: 'linux' },
+    process: { env: { MILPA_IMAGE: 'example/requested:new', MILPA_BACKEND: config.name, MILPA_KEEP_BACKEND: config.keep ? '1' : '0' }, platform: 'linux' },
     fetch: async () => ({ status: 200, body: { cancel: async () => {} } }),
     setTimeout: (fn) => { fn(); return 1 }, clearTimeout () {}, Buffer,
     require (name) {
@@ -96,6 +100,19 @@ test('a retagged reference does not change the retained image ID or its server c
   const h = house({ ref: 'example/requested:new' }); await h.start()
   const { status } = await h.state()
   assert.equal(status.image, 'example/requested:new'); assert.equal(status.imageId, OLD_ID); assert.equal(status.server, 'php-s'); kept(h)
+})
+test('a dotted backend name selects only its literal container beside a regex decoy', async () => {
+  const h = house({ name: 'milpa.test', containers: [{ id: STARTED, name: 'milpaXtest' }, { id: CONTAINER, name: 'milpa.test' }] })
+  await h.start(); assert.equal(h.calls.find(c => c[1] === 'inspect').at(-1), CONTAINER); kept(h)
+})
+test('a regex decoy alone is not an existing backend with the requested literal name', async () => {
+  const h = house({ name: 'milpa.test', containers: [{ id: CONTAINER, name: 'milpaXtest' }] })
+  await h.start(); assert.equal(h.choices(), 1)
+  assert.equal(h.calls.find(c => c[1] === 'inspect').at(-1), STARTED)
+})
+test('a container renamed between lookup and inspect is not attributed to the requested backend', async () => {
+  const h = house({ observedName: 'someone-else' }); await h.start()
+  const { status } = await h.state(); assert.equal(status.image, null); assert.equal(status.imageId, null); kept(h)
 })
 for (const options of [{ inspectError: true }, { raw: 'broken' }, { raw: '{}' }, { raw: '["", "sha256:no"]' }, { imageId: null }]) {
   test('unreadable or incomplete observation stays unknown: ' + JSON.stringify(options), async () => {
