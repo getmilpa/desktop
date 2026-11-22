@@ -42,6 +42,9 @@
             "category": "Development",
             "icon": "build/icon.png"
         },
+        "appImage": {
+            "executableArgs": ["--enable-sandbox"]
+        },
         "mac": {
             "target": [
                 "dmg",
