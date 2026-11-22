@@ -23,7 +23,7 @@ function requireLocalFrankenPHP (sh, image, port) {
     const config = JSON.parse(sh('docker', ['run', '--rm', '--network', 'none', '--entrypoint', 'frankenphp',
       '-e', `PORT=${port}`, '-e', 'MILPA_HTTP_BIND_CONFIG=bind 127.0.0.1',
       '-e', 'MERCURE_PUBLISHER_JWT_KEY=desktop-bind-probe', '-e', 'MERCURE_SUBSCRIBER_JWT_KEY=desktop-bind-probe',
-      image, 'adapt', '--config', '/etc/frankenphp/Caddyfile', '--adapter', 'caddyfile']))
+      image, 'adapt', '--config', '/etc/frankenphp/Caddyfile', '--adapter', 'caddyfile'], { timeout: 15000 }))
     const servers = Object.values(config.apps?.http?.servers || {})
     if (config.admin?.disabled !== true || servers.length !== 1 ||
         servers[0].automatic_https?.disable !== true ||
@@ -54,12 +54,12 @@ function requireLocalBackend (sh, container, name, port) {
   try {
     if (!/^[a-f0-9]{64}$/.test(container)) throw new Error('Invalid container identity')
     const inspect = () => JSON.parse(sh('docker', ['inspect', '--format',
-      '[{{json .Id}},{{json .Name}},{{json .State.Running}},{{json .HostConfig.NetworkMode}},{{json .NetworkSettings.Ports}},{{json .State.Pid}},{{json .State.StartedAt}},{{json .HostConfig.PidMode}}]', container]))
+      '[{{json .Id}},{{json .Name}},{{json .State.Running}},{{json .HostConfig.NetworkMode}},{{json .NetworkSettings.Ports}},{{json .State.Pid}},{{json .State.StartedAt}},{{json .HostConfig.PidMode}}]', container], { timeout: 5000 }))
     const data = inspect()
     if (!Array.isArray(data) || data.length !== 8 || data[0] !== container || data[1] !== '/' + name || data[2] !== true || !Number.isSafeInteger(data[5]) || data[5] <= 0 || typeof data[6] !== 'string' || !data[6]) throw new Error('Unknown backend')
     if (data[3] === 'host') {
       if (data[7] !== '' && data[7] !== 'private') throw new Error('Shared process namespace')
-      if (!localListeners(JSON.parse(sh('docker', ['exec', container, 'php', '-r', LISTENERS])), port)) throw new Error('Unconfined listener')
+      if (!localListeners(JSON.parse(sh('docker', ['exec', container, 'php', '-r', LISTENERS], { timeout: 5000 })), port)) throw new Error('Unconfined listener')
     } else if (data[3] === 'default' || data[3] === 'bridge') {
       const bindings = data[4]?.[`${port}/tcp`]
       if (!Array.isArray(bindings) || bindings.length === 0 || !bindings.every(b => loopback(b.HostIp) && b.HostPort === port)) throw new Error('Unconfined mapping')

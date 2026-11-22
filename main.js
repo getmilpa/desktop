@@ -136,7 +136,7 @@ async function startBackend () {
   }
   const requestedImage = chooseImage()
   const launchImage = sh('docker', ['image', 'inspect', '--format', '{{.Id}}', requestedImage])
-  if (!/^sha256:[a-f0-9]{64}$/.test(launchImage)) throw new Error('Could not resolve the backend image')
+  if (!/^sha256:[a-f0-9]{64}$/.test(launchImage)) throw Object.assign(new Error('backend.imageUnavailable'), { code: 'backend.imageUnavailable' })
   const launchServer = serverOf(launchImage)
   if (process.platform === 'linux' && launchServer === 'frankenphp') backendNetwork.requireLocalFrankenPHP(sh, launchImage, HOST_PORT)
   try { sh('docker', ['rm', '-f', NAME]) } catch {}
@@ -157,7 +157,7 @@ async function startBackend () {
     ? [launchImage]
     : ['-e', 'PHP_CLI_SERVER_WORKERS=8', launchImage, 'php', '-S', network.listen, '-t', 'public', 'public/index.php']
   const started = sh('docker', ['run', '-d', '--name', NAME, ...net, ...trialSeccomp(launchImage), '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, '-e', `MILPA_CLI_PREFIX=${TERMINAL}`, ...modelEnv, ...mounts, ...serve])
-  if (!/^[a-f0-9]{64}$/.test(started)) throw new Error('Could not identify the started backend')
+  if (!/^[a-f0-9]{64}$/.test(started)) throw Object.assign(new Error('backend.startUnverified'), { code: 'backend.startUnverified' })
   OWNED_BACKEND = started
   observeBackendImage(started)
   let answered = false
@@ -687,7 +687,7 @@ app.whenReady().then(async () => {
   } catch (e) {
     BOOT.phase = 'failed'
     BOOT.error = String(e && e.message || e).split('\n')[0]
-    BOOT.errorKey = ['backend.invalidPort', 'backend.imageBindUnsupported', 'backend.bindUnverified'].includes(e?.code) ? e.code : null
+    BOOT.errorKey = ['backend.imageUnavailable', 'backend.startUnverified', 'backend.invalidPort', 'backend.imageBindUnsupported', 'backend.bindUnverified'].includes(e?.code) ? e.code : null
   }
   // Open maximized — a workspace, not a small dialog. The 1440×900 size above is the RESTORED size
   // (what you get when you un-maximize), so it still behaves on small screens.
