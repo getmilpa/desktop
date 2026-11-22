@@ -15,7 +15,7 @@
     root.dataset.phase = st.phase
     $('#boot-title').textContent = st.phase === 'failed' ? tr('boot.failed') : st.phase === 'opening' ? tr('boot.opening') : st.phase === 'up' ? tr('boot.up', { origin: st.origin }) : tr('boot.starting')
     $('#boot-error').hidden = st.phase !== 'failed'
-    $('#boot-error-text').textContent = st.error || ''
+    $('#boot-error-text').textContent = st.errorKey ? tr(st.errorKey) : (st.error || '')
     $('#boot-setup').hidden = !(st.phase === 'up' && !st.panel)
     $('#boot-ready').hidden = !(st.phase === 'up' && st.panel)
     $('#boot-paste').hidden = st.phase !== 'up'

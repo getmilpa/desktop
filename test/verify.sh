@@ -34,7 +34,7 @@ guard "no production file references the OLD mounted keyring (0611: the signer u
 
 # Which image a launch runs when nobody names one — plain node, a fake docker (greenhouse evidence/1095, G1).
 node "$DIR/test/choose-image.js" || status=1
-node --test "$DIR/test/backend-image.js" || status=1
+node --test "$DIR/test/backend-image.js" "$DIR/test/backend-network.js" || status=1
 # Where the house's pages open — this window or the browser — and that every module main.js loads is packaged.
 node "$DIR/test/open-where.js" || status=1
 # A security key that asks for a PIN: the PIN's math against Yubico's, the wire, the ceremony — against a key that
