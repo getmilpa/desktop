@@ -1,0 +1,52 @@
+name: Linux AppImage sandbox
+
+# Apache-2.0 · (c) Rodrigo Vicente - TeamX Agency
+# The release caller and pull requests use the same built-artifact gate.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  appimage:
+    name: Packaged AppImage sandbox
+    # Explicit supported measurement environment; never disable the host's namespace policy to get a green check.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: AppImage mount and display prerequisites
+        run: sudo apt-get update && sudo apt-get install -y libfuse2 fuse xvfb xauth squashfs-tools libgtk-3-0 libnss3 libasound2 libgbm1 libglib2.0-bin
+      - name: Install the reviewed dependency lock
+        run: npm ci
+      - name: The gate rejects misleading evidence and replaced uploads
+        run: node --test test/appimage-sandbox.test.mjs
+      - name: Build the release AppImage
+        run: npm run dist
+      - name: Direct launch, desktop launcher and a functioning disabled control
+        run: timeout 110 xvfb-run -a node test/appimage-sandbox.mjs dist/*.AppImage dist/appimage-sandbox.json
+      - name: Recheck the exact bytes before upload
+        run: node test/check-appimage-proof.mjs dist/*.AppImage dist/appimage-sandbox.json
+      - name: Preserve the gate receipt even when it rejects
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-sandbox-receipt
+          path: dist/appimage-sandbox.json
+          if-no-files-found: warn
+      - name: Upload only a verified Linux distributable
+        uses: actions/upload-artifact@v4
+        with:
+          name: milpa-desktop-Linux
+          path: |
+            dist/*.AppImage
+            dist/appimage-sandbox.json
+          if-no-files-found: error
