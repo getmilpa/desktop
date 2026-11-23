@@ -18,13 +18,14 @@ permissions:
   contents: write   # create the Release + upload assets
 
 jobs:
+  linux:
+    uses: ./.github/workflows/appimage-sandbox.yml
+    permissions:
+      contents: read
+
   build:
-    name: build (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    name: build (macOS)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -33,35 +34,30 @@ jobs:
           node-version: '20'
 
       - name: Install deps
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Build distributable
         env:
           # No Apple signing cert in CI — ship an unsigned .dmg/.zip (Gatekeeper warns; users right-click → Open).
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: |
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            npm run dist:mac
-          else
-            npm run dist
-          fi
+        run: npm run dist:mac
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: milpa-desktop-${{ runner.os }}
           path: |
-            dist/*.AppImage
             dist/*.dmg
             dist/*.zip
           if-no-files-found: error
 
   release:
     name: publish release
-    needs: build
+    needs: [linux, build]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+      - uses: actions/checkout@v4
       - name: Collect artifacts
         uses: actions/download-artifact@v4
         with:
@@ -74,6 +70,9 @@ jobs:
           cd out
           sha256sum ./* > SHA256SUMS.txt
           echo "=== release assets ==="; ls -lh; echo "=== SHA256SUMS ==="; cat SHA256SUMS.txt
+
+      - name: The Linux upload is exactly the artifact that passed the sandbox gate
+        run: node test/check-appimage-proof.mjs out/*.AppImage incoming/milpa-desktop-Linux/appimage-sandbox.json
 
       - name: Publish to the Release
         env:

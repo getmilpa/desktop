@@ -141,3 +141,20 @@ On Linux, new backends also use Docker `no-new-privileges=true`. This keeps the 
 FrankenPHP process from acquiring file capabilities that hide its socket descriptors from
 the in-container observer. Reusing a backend still requires the same strict listener proof;
 an older instance whose ownership cannot be observed is left untouched and refused.
+
+### Linux AppImage release condition
+
+`Linux AppImage sandbox` builds the distributable from the committed dependency lock and runs that exact AppImage, mounted through FUSE, as a non-root user under Xvfb on Ubuntu 22.04. It checks both direct launch and the packaged desktop entry's arguments through `gio launch`. The boot window and its preload bridge must load. Its actual renderer PID must acquire an additional PID namespace and seccomp filter relative to the main process, with no effective capabilities and `NoNewPrivs` enabled. A third launch with `--no-sandbox` must still load the application and fail the isolation test. Missing prerequisites or inconclusive observations fail the gate.
+
+This checks the boot-window renderer, not every Chromium utility process or every Linux distribution. The test uses a fresh HOME, a refusing Docker stub and an environment without physical security keys; it does not exercise the backend, real credentials or the model. `npm run verify` remains a separate functional suite whose Electron tests disable sandboxing; it cannot satisfy this release condition.
+
+The Linux release job calls the same workflow as PRs. A SHA-256-bound receipt is checked before uploading the artifact and again before publishing it. Electron or packaging upgrades must pass this condition. The AppImage launcher explicitly supplies `--enable-sandbox` because electron-builder's default (including an empty argument list) supplies `--no-sandbox`; direct launch is measured without a corrective switch.
+
+To reproduce on a Linux host with Node.js 22+, FUSE, Xvfb, `gio` and `unsquashfs`:
+
+```sh
+npm ci
+npm run dist
+timeout 110 xvfb-run -a node test/appimage-sandbox.mjs dist/*.AppImage dist/appimage-sandbox.json
+node test/check-appimage-proof.mjs dist/*.AppImage dist/appimage-sandbox.json
+```
