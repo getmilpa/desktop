@@ -27,7 +27,7 @@ one file, Docker as the only prerequisite. The app pulls the public image
 
 ## Run from source (developers)
 
-Prerequisites: **Node.js**, **Docker** running, and (for the agent conversation) an OpenAI-compatible model
+Prerequisites: **Node.js 22.12.0 or newer**, **Docker** running, and (for the agent conversation) an OpenAI-compatible model
 endpoint. The board and preview pane render without any model.
 
 ```bash

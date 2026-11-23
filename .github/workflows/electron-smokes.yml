@@ -1,0 +1,29 @@
+name: Electron functional smokes
+# Apache-2.0 · (c) Rodrigo Vicente - TeamX Agency
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install X11 runtime
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth libgtk-3-0 libnss3 libasound2 libgbm1
+      - name: Install the locked Electron
+        run: npm ci
+      - name: No physical security keys in this runner
+        run: test -z "$(find /dev -maxdepth 1 -name 'hidraw*' -print -quit)"
+      - name: Functional Electron checks (not sandbox evidence)
+        run: |
+          set -euo pipefail
+          for test in smoke-modal smoke smoke-boot smoke-boot-workspace smoke-window smoke-key; do
+            timeout 190 xvfb-run -a node_modules/electron/dist/electron --no-sandbox "test/$test.js"
+          done
