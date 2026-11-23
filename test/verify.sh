@@ -5,6 +5,8 @@
 # that asks for a PIN (smoke-key.js). --no-sandbox goes on the command line: appended
 # from the script it arrives after the renderer's sandbox is set up, and an http page then cannot get shared memory.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Electron 45 downloads lazily on first require; do not capture its download message as a path.
+node -e 'require(process.argv[1])' "$DIR/node_modules/electron" || exit 1
 ELECTRON="$(node -p 'require("electron")')"
 status=0
 

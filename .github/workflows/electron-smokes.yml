@@ -18,7 +18,9 @@ jobs:
       - name: Install X11 runtime
         run: sudo apt-get update && sudo apt-get install -y xvfb xauth libgtk-3-0 libnss3 libasound2 libgbm1
       - name: Install the locked Electron
-        run: npm ci
+        run: |
+          npm ci
+          node -e 'require("electron")'
       - name: No physical security keys in this runner
         run: test -z "$(find /dev -maxdepth 1 -name 'hidraw*' -print -quit)"
       - name: Functional Electron checks (not sandbox evidence)
