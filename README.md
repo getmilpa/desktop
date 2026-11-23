@@ -118,7 +118,7 @@ This checks the boot-window renderer, not every Chromium utility process or ever
 
 The Linux release job calls the same workflow as PRs. A SHA-256-bound receipt is checked before uploading the artifact and again before publishing it. Electron or packaging upgrades must pass this condition. The AppImage launcher explicitly supplies `--enable-sandbox` because electron-builder's default (including an empty argument list) supplies `--no-sandbox`; direct launch is measured without a corrective switch.
 
-To reproduce on a Linux host with Node.js 22+, FUSE, Xvfb, `gio` and `unsquashfs`:
+To reproduce on a Linux host with Node.js 22.12.0+, FUSE, Xvfb, `gio` and `unsquashfs`:
 
 ```sh
 npm ci
