@@ -136,3 +136,8 @@ routing/firewall overrides, or another process changing the network.
 Validation includes isolated Linux IPv4/IPv6 listener controls and outbound HTTP to a non-loopback
 model surrogate, plus retained-container lifecycle tests. macOS Docker Desktop execution remains a
 release prerequisite; Linux Docker tests of the same publishing arguments do not certify macOS.
+
+On Linux, new backends also use Docker `no-new-privileges=true`. This keeps the non-root
+FrankenPHP process from acquiring file capabilities that hide its socket descriptors from
+the in-container observer. Reusing a backend still requires the same strict listener proof;
+an older instance whose ownership cannot be observed is left untouched and refused.

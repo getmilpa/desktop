@@ -14,6 +14,7 @@ test('invalid ports are rejected before launch', () => {
 })
 test('Linux local listener is IPv4 only; non-Linux publishes both loopbacks', () => {
   assert.equal(launchNetwork('linux', '8899').listen, '127.0.0.1:8899')
+  assert.deepEqual(launchNetwork('linux', '8899').args, ['--network', 'host', '--security-opt', 'no-new-privileges=true', '-e', 'MILPA_HTTP_BIND_CONFIG=bind 127.0.0.1'])
   assert.deepEqual(launchNetwork('darwin', '8899').args, ['-p', '127.0.0.1:8899:8899', '-p', '[::1]:8899:8899'])
 })
 test('no listener, foreign ownership, malformed rows and wildcard siblings cannot pass', () => {

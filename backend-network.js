@@ -9,8 +9,10 @@ function portNumber (port) {
 }
 function launchNetwork (platform, port) {
   port = portNumber(port)
+  // The non-root server must not acquire file capabilities that conceal its
+  // socket descriptors from the same-UID observer in its private PID namespace.
   return platform === 'linux'
-    ? { args: ['--network', 'host', '-e', 'MILPA_HTTP_BIND_CONFIG=bind 127.0.0.1'], listen: `127.0.0.1:${port}` }
+    ? { args: ['--network', 'host', '--security-opt', 'no-new-privileges=true', '-e', 'MILPA_HTTP_BIND_CONFIG=bind 127.0.0.1'], listen: `127.0.0.1:${port}` }
     : { args: ['-p', `127.0.0.1:${port}:${port}`, '-p', `[::1]:${port}:${port}`], listen: `0.0.0.0:${port}` }
 }
 function loopback (ip) {
