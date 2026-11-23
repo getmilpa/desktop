@@ -11,7 +11,7 @@ const show = {
   ok: true, goal: 'Smoke: construir el onramp', mode: 'ask', turns: 7, compactedThrough: 3,
   plan: '1. Leer 2. Habilitar 3. Verificar', todos: [{ text: 'Habilitar milpa/agent', status: 'active' }],
   permissions: [{ operation: 'plugins.enable', status: 'firmado' }, { operation: 'config.set', status: 'otorgado' }],
-  decisions: ['Enrolar consume una raíz.', 'La sesión no acuña identidad.']
+  decisions: [{ question: 'Enrolar consume una raíz.', answer: 'sí' }, { question: 'La sesión no acuña identidad.', answer: 'sí' }]
 }
 // A turn that ENDS IN A QUESTION: the model runs (model_called → «pensando»), then parks on a durable gate
 // (question_asked). The two model_returned carry the honest token usage the Context tab reads.

@@ -5,6 +5,8 @@
 # that asks for a PIN (smoke-key.js). --no-sandbox goes on the command line: appended
 # from the script it arrives after the renderer's sandbox is set up, and an http page then cannot get shared memory.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Electron 45 downloads lazily on first require; do not capture its download message as a path.
+node -e 'require(process.argv[1])' "$DIR/node_modules/electron" || exit 1
 ELECTRON="$(node -p 'require("electron")')"
 status=0
 
@@ -40,7 +42,7 @@ node "$DIR/test/open-where.js" || status=1
 # A security key that asks for a PIN: the PIN's math against Yubico's, the wire, the ceremony — against a key that
 # is a process, never a real one (greenhouse decisions/0568).
 node "$DIR/test/security-key.js" || status=1
-for SMOKE in "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-boot-workspace.js" "$DIR/test/smoke-window.js" "$DIR/test/smoke-key.js"; do
+for SMOKE in "$DIR/test/smoke-modal.js" "$DIR/test/smoke.js" "$DIR/test/smoke-boot.js" "$DIR/test/smoke-boot-workspace.js" "$DIR/test/smoke-window.js" "$DIR/test/smoke-key.js"; do
   if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ]; then
     xvfb-run -a --server-args='-screen 0 1320x840x24' "$ELECTRON" --no-sandbox "$SMOKE" || status=1
   else
