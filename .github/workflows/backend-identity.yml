@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '20'
       - name: Observed backend identity and lifecycle
-        run: node --test test/backend-image.js
+        run: node --test test/backend-image.js test/backend-network.js
       - name: Image selection and packaged modules
         run: |
           node test/choose-image.js

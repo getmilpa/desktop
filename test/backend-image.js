@@ -15,7 +15,7 @@ const OLD_ID = 'sha256:' + '1'.repeat(64)
 const NEW_ID = 'sha256:' + '2'.repeat(64)
 
 function house (options = {}) {
-  const calls = []; const handlers = new Map(); let choices = 0
+  const calls = []; const handlers = new Map(); let choices = 0; let signers = 0
   const config = { keep: true, present: true, name: 'milpa-desktop-backend', ref: 'example/kept:old', imageId: OLD_ID, ...options }
   function docker (cmd, args) {
     calls.push([cmd, ...args])
@@ -27,6 +27,12 @@ function house (options = {}) {
       return config.present ? rows.filter(row => new RegExp(pattern).test('/' + row.name) || new RegExp(pattern).test(row.name)).map(row => args.includes('{{.Names}}') ? row.name : row.id).join('\n') : ''
     }
     if (args[0] === 'inspect') {
+      if (args.some(arg => arg.includes('{{json .HostConfig.NetworkMode}}'))) {
+        if (config.networkError) throw new Error('Network inspection unavailable')
+        const mode = config.platform === 'darwin' ? 'default' : 'host'
+        const bindings = config.bindings || { '8899/tcp': [{ HostIp: '127.0.0.1', HostPort: '8899' }, { HostIp: '::1', HostPort: '8899' }] }
+        return JSON.stringify([args.at(-1), '/' + config.name, true, config.mode || mode, bindings, 100, '2026-11-22T00:00:00Z', ''])
+      }
       if (config.inspectError) throw new Error('Container vanished')
       if (args.includes('{{.Config.Image}}')) return config.ref
       assert.ok([CONTAINER, STARTED].includes(args.at(-1)), 'Inspect must bind an exact container ID')
@@ -35,20 +41,25 @@ function house (options = {}) {
       return config.raw === undefined ? JSON.stringify(data) : config.raw
     }
     if (args[0] === 'image' && args[1] === 'inspect') {
+      if (args.includes('{{.Id}}')) return NEW_ID
       if (config.serverError) throw new Error('Image unavailable')
       // The requested tag now points at a different image; the retained ID has not changed.
-      return JSON.stringify([args.at(-1) === OLD_ID ? 'milpa-dev' : 'milpa-frankenphp'])
+      return JSON.stringify([args.at(-1) === OLD_ID || config.plain ? 'milpa-dev' : 'milpa-frankenphp'])
     }
+    if (args[0] === 'run' && args.includes('adapt')) return JSON.stringify({ admin: { disabled: true }, apps: { http: { servers: { srv0: { automatic_https: { disable: true }, listen: [config.oldFranken ? ':8899' : '127.0.0.1:8899'] } } } } })
     if (args[0] === 'run' && args.includes('--rm')) return '{}'
     if (args[0] === 'run' && args.includes('-d')) return STARTED
     if (args[0] === 'rm') return ''
-    if (args[0] === 'exec') return 'no'
+    if (args[0] === 'exec') {
+      if (args.includes(require('../backend-network.js').LISTENERS)) return JSON.stringify(config.listeners || [['tcp', '0100007F', 8899, true]])
+      return 'no'
+    }
     throw new Error('Unexpected Docker call: ' + args.join(' '))
   }
   const fakeFs = { mkdirSync () {}, writeFileSync () {} }
   const context = vm.createContext({
     console, URL, AbortSignal, __dirname: ROOT,
-    process: { env: { MILPA_IMAGE: 'example/requested:new', MILPA_BACKEND: config.name, MILPA_KEEP_BACKEND: config.keep ? '1' : '0' }, platform: 'linux' },
+    process: { env: { MILPA_IMAGE: 'example/requested:new', MILPA_BACKEND: config.name, MILPA_KEEP_BACKEND: config.keep ? '1' : '0' }, platform: config.platform || 'linux' },
     fetch: async () => ({ status: 200, body: { cancel: async () => {} } }),
     setTimeout: (fn) => { fn(); return 1 }, clearTimeout () {}, Buffer,
     require (name) {
@@ -61,6 +72,7 @@ function house (options = {}) {
       if (name === 'node:os') return { homedir: () => '/isolated-test' }
       if (name === './choose-image.js') return { IMAGE_PREFERRED: 'example/preferred:new', chooseImage: () => { choices++; return 'example/requested:new' } }
       if (name === './host-signer.js') return { serve: () => {
+        signers++
         if (config.signerError) throw new Error('Signer unavailable')
         return { once: (event, fn) => { if (event === 'listening') fn() }, close () {} }
       } }
@@ -73,7 +85,8 @@ function house (options = {}) {
   vm.runInContext(source, context, { filename: 'main.js' })
   const own = { senderFrame: { url: 'file:///desktop/renderer/boot.html' } }
   return {
-    config, calls, choices: () => choices,
+    stop: () => vm.runInContext('stopBackend()', context),
+    config, calls, choices: () => choices, signers: () => signers,
     start: async () => { await vm.runInContext('startBackend()', context); vm.runInContext("BOOT.phase = 'up'", context) },
     state: async () => ({ status: await handlers.get('milpa:status')(own), boot: await handlers.get('milpa:boot')(own) })
   }
@@ -167,5 +180,47 @@ for (const locale of ['en', 'es']) {
     assert.match(element('#boot-container').textContent, locale === 'en' ? /unknown/ : /desconocida/)
     assert.doesNotMatch(element('#boot-container').textContent, /observed:old|null|undefined/)
     assert.equal(element('#boot-container').title, '')
+    Object.assign(state, { phase: 'failed', errorKey: 'backend.bindUnverified', error: 'untranslated' }); await next()
+    assert.match(element('#boot-error-text').textContent, locale === 'en' ? /Desktop did not attach/ : /Desktop no se conectó/)
+    assert.doesNotMatch(element('#boot-error-text').textContent, /backend.bindUnverified|untranslated/)
   })
 }
+
+for (const platform of ['linux', 'darwin']) {
+  test('local launch arguments preserve outbound model configuration on ' + platform, async () => {
+    const h = house({ keep: false, present: false, platform }); await h.start()
+    const run = h.calls.find(c => c[1] === 'run' && c.includes('-d'))
+    assert.ok(run.includes('MILPA_AGENT_BASE_URL=http://model.example:11438'))
+    assert.ok(run.includes(NEW_ID), 'Launch uses the immutable image checked during preflight')
+    if (platform === 'linux') { assert.ok(run.includes('host')); assert.ok(run.includes('MILPA_HTTP_BIND_CONFIG=bind 127.0.0.1')) }
+    else { assert.ok(run.includes('127.0.0.1:8899:8899')); assert.ok(run.includes('[::1]:8899:8899')); assert.ok(!run.includes('MILPA_HTTP_BIND_CONFIG=bind 127.0.0.1')) }
+  })
+}
+for (const options of [
+  { networkError: true }, { mode: 'container:other' },
+  { listeners: [['tcp', '00000000', 8899, true]] },
+  { listeners: [['tcp', '0100007F', 8899, true], ['tcp6', '00000000000000000000000000000000', 8899, true]] },
+  { listeners: [['tcp', '0100007F', 8899, false]] },
+  { platform: 'darwin', bindings: { '8899/tcp': [{ HostIp: '0.0.0.0', HostPort: '8899' }] } },
+  { platform: 'darwin', bindings: { '8899/tcp': [{ HostIp: '127.0.0.1', HostPort: '8899' }, { HostIp: '::', HostPort: '8899' }] } }
+]) test('unverified retained backend stays running without signer: ' + JSON.stringify(options), async () => {
+  const h = house(options); await assert.rejects(h.start(), { code: 'backend.bindUnverified' }); kept(h); assert.equal(h.signers(), 0)
+})
+test('old FrankenPHP image is rejected before removing a container or creating a signer', async () => {
+  const h = house({ keep: false, oldFranken: true })
+  await assert.rejects(h.start(), { code: 'backend.imageBindUnsupported' })
+  assert.ok(!h.calls.some(c => c[1] === 'rm' || c.includes('-d')))
+  assert.equal(h.signers(), 0)
+  h.stop(); assert.ok(!h.calls.some(c => c[1] === 'rm'))
+})
+
+for (const platform of ['linux', 'darwin']) test('plain PHP listens at the correct side of the network boundary on ' + platform, async () => {
+  const h = house({ keep: false, present: false, plain: true, platform }); await h.start()
+  const run = h.calls.find(c => c[1] === 'run' && c.includes('-d'))
+  assert.equal(run[run.indexOf('-S') + 1], platform === 'linux' ? '127.0.0.1:8899' : '0.0.0.0:8899')
+})
+
+test('quit removes only the immutable container this process started', async () => {
+  const h = house({ keep: false, present: false }); await h.start(); h.stop()
+  assert.deepEqual(h.calls.filter(c => c[1] === 'rm').at(-1).slice(1), ['rm', '-f', STARTED])
+})

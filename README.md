@@ -110,6 +110,38 @@ npm run verify      # renderer checks against fixtures; screenshots land in test
 ---
 Apache-2.0 · © Rodrigo Vicente - TeamX Agency
 
+## Local backend listeners
+
+Desktop confines its backend HTTP port to this station. On Linux it retains host networking for
+outgoing model connections, but PHP and FrankenPHP listen on `127.0.0.1` only; no IPv6 HTTP listener
+is opened. On macOS Docker publishes the container port explicitly on `127.0.0.1` and `::1`.
+The container-side server remains reachable through Docker's bridge. The configured model URL and
+outgoing network access are unchanged.
+
+Linux FrankenPHP requires an image whose Caddyfile supports `MILPA_HTTP_BIND_CONFIG` (Greenhouse
+E1262). Desktop resolves the image ID and checks its adapted listeners before replacing a backend.
+Older images that ignore the setting are refused; use a compatible image or explicitly select the
+plain PHP image. The corrected image must be published before releasing this Desktop change with
+FrankenPHP as the default. This PR does not publish that image.
+
+With `MILPA_KEEP_BACKEND=1`, Desktop inspects the exact running container before connecting the
+signer. A public mapping/listener, missing observation, changed instance, unsupported network mode,
+or unowned host listener prevents attachment. The existing container stays running; it is not
+recreated or silently repaired. For host networking, the check covers the configured HTTP port in
+both `/proc/net/tcp` and `/proc/net/tcp6`, with a socket owned by a process in the container's private
+PID namespace. For bridge networking it checks Docker's effective published-port bindings. This is
+an observation at attachment, not continuous enforcement against later reconfiguration, Docker
+routing/firewall overrides, or another process changing the network.
+
+Validation includes isolated Linux IPv4/IPv6 listener controls and outbound HTTP to a non-loopback
+model surrogate, plus retained-container lifecycle tests. macOS Docker Desktop execution remains a
+release prerequisite; Linux Docker tests of the same publishing arguments do not certify macOS.
+
+On Linux, new backends also use Docker `no-new-privileges=true`. This keeps the non-root
+FrankenPHP process from acquiring file capabilities that hide its socket descriptors from
+the in-container observer. Reusing a backend still requires the same strict listener proof;
+an older instance whose ownership cannot be observed is left untouched and refused.
+
 ### Linux AppImage release condition
 
 `Linux AppImage sandbox` builds the distributable from the committed dependency lock and runs that exact AppImage, mounted through FUSE, as a non-root user under Xvfb on Ubuntu 22.04. It checks both direct launch and the packaged desktop entry's arguments through `gio launch`. The boot window and its preload bridge must load. Its actual renderer PID must acquire an additional PID namespace and seccomp filter relative to the main process, with no effective capabilities and `NoNewPrivs` enabled. A third launch with `--no-sandbox` must still load the application and fail the isolation test. Missing prerequisites or inconclusive observations fail the gate.

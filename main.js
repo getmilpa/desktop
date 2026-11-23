@@ -37,9 +37,9 @@ const fs = require('node:fs')
 const HOST_GNUPG = process.env.MILPA_HOST_GNUPGHOME || path.join(os.homedir(), '.milpa', 'host-gnupg')
 const HOST_GNUPG_SEAT = process.env.MILPA_HOST_GNUPGHOME_SEAT || path.join(os.homedir(), '.milpa', 'host-gnupg-seats')
 // PLATFORM. On Linux, `--network host` lets the container reach the local model and serves the board on
-// the host directly. On macOS (and Windows), Docker runs in a VM where `--network host` binds the VM,
-// NOT the host — so we publish the port instead, and a model on the Mac is reached via host.docker.internal.
-const IS_MAC = process.platform === 'darwin'
+// host loopback directly. Other platforms publish loopback ports through Docker; the outgoing
+// model URL remains the configured one (host.docker.internal can reach a model on a Mac).
+const backendNetwork = require('./backend-network.js')
 
 // The distributable binary defaults to the PUBLIC dev image (pulled from ghcr, no clone, no auth): a downloaded
 // Milpa Desktop is self-contained beyond needing Docker. House devs override with a local tag via MILPA_IMAGE
@@ -59,6 +59,7 @@ const hostSigner = require('./host-signer.js')
 const signWiring = require('./sign-wiring.js')
 const { makeApprover } = require('./host-approve.js')
 // Observed backend identity. A configured tag is only a launch request, not a running image.
+let OWNED_BACKEND = null // Only a container this process launched may be removed on quit.
 let IMAGE = null
 let IMAGE_ID = null
 let SERVER = 'unknown'
@@ -102,7 +103,7 @@ const SIGNIN_URL = `${PASSKEY_ORIGIN}/webauthn/signin?next=${encodeURIComponent(
 const KEY_PIN = process.platform === 'linux'
 const HOUSE_PAGE = { preload: path.join(__dirname, 'preload.js'), additionalArguments: [`--milpa-house=${PASSKEY_ORIGIN}`] }
 // What the window shows while it is not the panel yet — read by the boot screen through `milpa:boot`.
-const BOOT = { phase: 'starting', error: null, panel: false }
+const BOOT = { phase: 'starting', error: null, errorKey: null, panel: false }
 let win = null
 let signServer = null   // the host signer (0611); bound before the container, closed on quit
 const VERSION = require('./package.json').version
@@ -113,6 +114,7 @@ const exec = (cmd, args, opts = {}) => new Promise((res) => {
 })
 
 async function startBackend () {
+  const network = backendNetwork.launchNetwork(process.platform, HOST_PORT)
   // MILPA_KEEP_BACKEND=1: attach to an already-running backend instead of recreating it — the knob
   // that lets the UI restart (to pick up a shell fix) WITHOUT killing the live sessions inside the
   // container. Measured need: a session mid-build died with the container on every relaunch.
@@ -122,6 +124,7 @@ async function startBackend () {
     const up = sh('docker', ['ps', '--no-trunc', '--filter', `name=^/${name}$`, '--format', '{{.ID}}'])
     if (up) {
       if (!/^[a-f0-9]{64}$/.test(up)) throw new Error('Could not identify the retained backend')
+      backendNetwork.requireLocalBackend(sh, up, NAME, HOST_PORT)
       observeBackendImage(up)
       for (let i = 0; i < 10; i++) { try { const r = await fetch(`${BASE}/`); if (r.status < 500) break } catch {} await new Promise(r => setTimeout(r, 500)) }
       // The kept container still mounts the socket dir (stable under userData): rebind the signer so it can sign.
@@ -131,17 +134,19 @@ async function startBackend () {
       return
     }
   }
-  try { sh('docker', ['rm', '-f', NAME]) } catch {}
-  const launchImage = chooseImage()
+  const requestedImage = chooseImage()
+  const launchImage = sh('docker', ['image', 'inspect', '--format', '{{.Id}}', requestedImage])
+  if (!/^sha256:[a-f0-9]{64}$/.test(launchImage)) throw Object.assign(new Error('backend.imageUnavailable'), { code: 'backend.imageUnavailable' })
   const launchServer = serverOf(launchImage)
-  // 0611: bind the host signer on a socket and mount only THAT into the container — NO keyring, NO pcscd. The house
+  if (process.platform === 'linux' && launchServer === 'frankenphp') backendNetwork.requireLocalFrankenPHP(sh, launchImage, HOST_PORT)
+  try { sh('docker', ['rm', '-f', NAME]) } catch {}
+  // 0611: mount only the signer socket directory — NO keyring, NO pcscd. Bind the socket after network verification. The house
   // signs through the host; the private key never enters it. The socket dir is under userData (stable across runs).
   const signSocketDir = path.join(app.getPath('userData'), 'sign')
   try { fs.mkdirSync(signSocketDir, { recursive: true, mode: 0o700 }) } catch {}
-  await startHostSigner(signSocketDir)
   const mounts = signWiring.containerSignArgs(signSocketDir)
-  // On Linux, host networking; on macOS, publish the port (host networking is a no-op in the VM there).
-  const net = IS_MAC ? ['-p', `${HOST_PORT}:${HOST_PORT}`] : ['--network', 'host']
+  // Limit incoming traffic at the server on Linux, at Docker's host mapping elsewhere.
+  const net = network.args
   // The model config goes on the CONTAINER (not just per docker-exec), so the agent web door
   // (POST /agent over HTTP, greenhouse decisions/0155) reaches the local model too.
   const modelEnv = ['-e', `MILPA_AGENT_BASE_URL=${MODEL.base}`, '-e', `MILPA_AGENT_MODEL=${MODEL.name}`, '-e', 'MILPA_AGENT_BASIC_AUTH=', ...ctxEnv()]
@@ -150,12 +155,16 @@ async function startBackend () {
   // stream, a turn) does not hold the next one (decisions/0504) — set here too, for an image that predates the ENV.
   const serve = launchServer === 'frankenphp'
     ? [launchImage]
-    : ['-e', 'PHP_CLI_SERVER_WORKERS=8', launchImage, 'php', '-S', `0.0.0.0:${HOST_PORT}`, '-t', 'public', 'public/index.php']
+    : ['-e', 'PHP_CLI_SERVER_WORKERS=8', launchImage, 'php', '-S', network.listen, '-t', 'public', 'public/index.php']
   const started = sh('docker', ['run', '-d', '--name', NAME, ...net, ...trialSeccomp(launchImage), '-e', `PORT=${HOST_PORT}`, '-e', `MILPA_PASSKEY_ORIGINS=${PASSKEY_ORIGIN}`, '-e', `MILPA_CLI_PREFIX=${TERMINAL}`, ...modelEnv, ...mounts, ...serve])
+  if (!/^[a-f0-9]{64}$/.test(started)) throw Object.assign(new Error('backend.startUnverified'), { code: 'backend.startUnverified' })
+  OWNED_BACKEND = started
   observeBackendImage(started)
   let answered = false
   for (let i = 0; i < 40 && !answered; i++) { try { const r = await fetch(`${BASE}/`); answered = r.status < 500 } catch {} if (!answered) await new Promise(r => setTimeout(r, 800)) }
   if (!answered) throw new Error(`the house did not answer on ${BASE} — docker logs ${NAME}`)
+  backendNetwork.requireLocalBackend(sh, started, NAME, HOST_PORT)
+  await startHostSigner(signSocketDir)
   // 0611: leave the container with PUBLIC keys only — export whatever the host holds, import it in, confirm 0 secrets.
   // -1 means the check could not run (not "0 secrets") — say that too.
   try {
@@ -234,7 +243,10 @@ function probeTrial () {
 function stopBackend () {
   try { if (signServer) { signServer.close(); signServer = null } } catch {}
   if (process.env.MILPA_KEEP_BACKEND === '1') return
-  try { sh('docker', ['rm', '-f', NAME]) } catch {}
+  if (OWNED_BACKEND) {
+    try { sh('docker', ['rm', '-f', OWNED_BACKEND]) } catch {}
+    OWNED_BACKEND = null
+  }
 }
 
 // ── IPC: the narrow bridge the preload exposes ─────────────────────────────────────────────────
@@ -675,6 +687,7 @@ app.whenReady().then(async () => {
   } catch (e) {
     BOOT.phase = 'failed'
     BOOT.error = String(e && e.message || e).split('\n')[0]
+    BOOT.errorKey = ['backend.imageUnavailable', 'backend.startUnverified', 'backend.invalidPort', 'backend.imageBindUnsupported', 'backend.bindUnverified'].includes(e?.code) ? e.code : null
   }
   // Open maximized — a workspace, not a small dialog. The 1440×900 size above is the RESTORED size
   // (what you get when you un-maximize), so it still behaves on small screens.
