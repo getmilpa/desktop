@@ -185,7 +185,9 @@ app.whenReady().then(async () => {
     const inner = probe.webContents.mainFrame.frames[0]
     const framed = inner ? await inner.executeJavaScript(`window.raw.webauthn(${REQ})`) : null
     record('…and a frame inside a page of the house is refused too: only the top frame may ask [negative control]', !!inner && new URL(inner.url).origin === HOUSE && framed && framed.error && framed.error.name === 'NotAllowedError' && !pinWindow() && key.log.length === before, framed)
-    pjs(`window.raw.webauthn(${REQ}).then(r => { window.rawResult = r })`)
+    // Destroying the requesting frame below rejects executeJavaScript; observe that expected cancellation.
+    const pendingProbe = pjs(`window.raw.webauthn(${REQ}).then(r => { window.rawResult = r })`).then(
+      () => ({ completed: true }), error => ({ disposed: /Render frame was disposed/.test(error.message), message: error.message }))
     v = await shown('pin')
     record('the top frame of a page of the house, over the same raw channel, is served — so the refusals above are main\'s, not a broken harness [positive control]', !!v && v.pinVisible)
     before = key.log.length
@@ -196,6 +198,8 @@ app.whenReady().then(async () => {
     record('…nor close it', !!pinWindow())
     probe.destroy(); await sleep(300)
     record('the window that asked is closed: the PIN window goes with it', await gone())
+    const completion = await pendingProbe
+    record('the destroyed requesting frame cancels its pending script explicitly', completion.disposed === true, completion)
   } catch (e) { record('harness ran without throwing', false, String(e && e.stack || e)) }
 
   const failed = checks.filter(c => !c.ok)

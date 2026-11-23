@@ -13,7 +13,7 @@
     "license": "Apache-2.0",
     "author": "Rodrigo Vicente - TeamX Agency",
     "devDependencies": {
-        "electron": "^38.0.0",
+        "electron": "45.4.1",
         "electron-builder": "^25.0.0"
     },
     "build": {
@@ -62,5 +62,8 @@
         "type": "git",
         "url": "https://github.com/getmilpa/desktop.git"
     },
-    "homepage": "https://github.com/getmilpa/desktop"
+    "homepage": "https://github.com/getmilpa/desktop",
+    "engines": {
+        "node": ">=22.12.0"
+    }
 }
