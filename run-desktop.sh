@@ -34,7 +34,9 @@ esac
 # Resolve the Electron binary the canonical, platform-correct way (no hardcoded dist path). `.trim()` guards
 # against an install whose path.txt carries a trailing newline — that stray "\n" is what made `electron .`
 # and a raw require() spawn a bogus ".../electron\n" and fail with ENOENT.
-ELECTRON="$(node -e 'process.stdout.write(String(require("electron")).trim())' 2>/dev/null)"
+# Electron 45 downloads on first require and logs to stdout. Finish that step before capturing the path.
+node -e 'require("electron")' || exit 1
+ELECTRON="$(node -e 'process.stdout.write(String(require("electron")).trim())')" || exit 1
 if [ -z "$ELECTRON" ] || [ ! -x "$ELECTRON" ]; then
   echo "Electron not installed. Run first:  npm install"
   exit 1
